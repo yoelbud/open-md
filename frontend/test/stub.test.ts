@@ -52,6 +52,21 @@ describe("parseDocument", () => {
     ]);
   });
 
+  it("renders tables as table HTML and attaches preview metadata", () => {
+    const doc = parseDocument("| name | score |\n| --- | ---: |\n| Ada | 99 |\n");
+    const block = doc.blocks[0]!;
+
+    expect(block.kind).toBe("table");
+    expect(block.html).toContain("<table>");
+    expect(block.html).toContain("<thead>");
+    expect(block.html).toContain('style="text-align:right"');
+    expect(block.preview?.table).toEqual({
+      headers: ["name", "score"],
+      alignments: ["default", "right"],
+      rows: [["Ada", "99"]],
+    });
+  });
+
   it("produces deterministic hashes and ids for the same input", () => {
     const src = "# H\n\nbody text\n";
     const a = parseDocument(src);

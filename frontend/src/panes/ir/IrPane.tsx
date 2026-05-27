@@ -1,12 +1,17 @@
 import { createEffect, createSignal, Index, Show } from "solid-js";
+import type { JSX } from "solid-js";
 import {
+  clearEditingPoint,
   deleteBlocks,
   insertBlockAfter,
   insertBlockAtStart,
+  isEditingPointInBlock,
   moveBlocksDown,
   moveBlocksUp,
   replaceBlockSource,
+  setEditingPoint,
   useDocument,
+  useEditingPoint,
 } from "../../store/document";
 import { InsertMenu } from "../InsertMenu";
 import type { Block } from "../../ipc/types";
@@ -40,14 +45,27 @@ let lastClickedId: string | null = null;
 
 // ── single block row ────────────────────────────────────────────────────────
 const IrBlockRow = (props: { block: Block }) => {
+  const editingPoint = useEditingPoint();
   let ta: HTMLTextAreaElement | undefined;
 
   const isSelected = () => selected().has(props.block.id);
+  const isEditingPoint = () => {
+    const point = editingPoint();
+    return !!point && point.pane !== "ir" && isEditingPointInBlock(point, props.block);
+  };
 
   const resize = () => {
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = ta.scrollHeight + "px";
+  };
+
+  const markEditingPoint = (target = ta) => {
+    if (!target) return;
+    setEditingPoint({
+      pane: "ir",
+      sourceOffset: props.block.src_range[0] + target.selectionStart,
+    });
   };
 
   createEffect(() => {
@@ -76,7 +94,7 @@ const IrBlockRow = (props: { block: Block }) => {
   return (
     <div
       class="ir-block"
-      classList={{ selected: isSelected() }}
+      classList={{ selected: isSelected(), "editing-point": isEditingPoint() }}
       onClick={handleRowClick}
     >
       <div class="ir-block-head">
@@ -105,10 +123,16 @@ const IrBlockRow = (props: { block: Block }) => {
         spellcheck={false}
         rows={1}
         onClick={(e) => e.stopPropagation()}
+        onFocus={(e) => markEditingPoint(e.currentTarget)}
+        onSelect={(e) => markEditingPoint(e.currentTarget)}
+        onKeyUp={(e) => markEditingPoint(e.currentTarget)}
+        onMouseUp={(e) => markEditingPoint(e.currentTarget)}
+        onBlur={() => clearEditingPoint("ir")}
         onInput={(e) => {
           const hadTrailing = props.block.source.endsWith("\n");
           replaceBlockSource(props.block, e.currentTarget.value + (hadTrailing ? "\n" : ""));
           resize();
+          markEditingPoint(e.currentTarget);
         }}
       />
     </div>
@@ -161,7 +185,11 @@ const SelectionToolbar = () => {
 };
 
 // ── pane root ───────────────────────────────────────────────────────────────
-export const IrPane = () => {
+type PaneProps = {
+  layoutControls?: JSX.Element;
+};
+
+export const IrPane = (props: PaneProps) => {
   const doc = useDocument;
 
   // Keyboard shortcuts when focus is inside the IR pane.
@@ -183,6 +211,7 @@ export const IrPane = () => {
       <div class="pane-header">
         <span>IR</span>
         <span class="header-actions">
+          {props.layoutControls}
           <InsertMenu
             block={null}
             label="at top"

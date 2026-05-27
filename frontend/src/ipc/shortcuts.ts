@@ -11,6 +11,7 @@ import {
   togglePane,
   undo,
 } from "../store/document";
+import { exportPreviewPdf } from "./previewPdf";
 
 export const registerShortcuts = () => {
   const handler = (e: KeyboardEvent) => {
@@ -25,6 +26,10 @@ export const registerShortcuts = () => {
       case "o":
         e.preventDefault();
         void openFile();
+        break;
+      case "p":
+        e.preventDefault();
+        exportPreviewPdf();
         break;
       case "s":
         e.preventDefault();

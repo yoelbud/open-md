@@ -3,7 +3,9 @@
 // shape. This keeps the frontend buildable and demo-able standalone, and
 // gets replaced by `invoke('parse_document', ...)` in M1.
 
-import type { Block, BlockKind, DocumentPayload } from "./types";
+import type { Block, BlockKind, BlockPreviewMeta, DocumentPayload, MarkdownTable } from "./types";
+import { parseMarkdownTable } from "../markdown/table";
+import { resolveAssetSrc } from "../store/assets";
 
 // Inline-image regex with optional title and optional Maruku-style "=WxH"
 // size hint. Captures: 1=alt, 2=url, 3=title (no quotes), 4=size token (no "=").
@@ -63,7 +65,8 @@ const renderImgTag = (img: ParsedImage): string => {
   if (img.height) styles.push(`height:${img.height}`);
   if (!img.width && !img.height) styles.push("max-width:100%");
   const attrs = [
-    `src="${escapeAttr(img.src)}"`,
+    `src="${escapeAttr(resolveAssetSrc(img.src))}"`,
+    `data-om-src="${escapeAttr(img.src)}"`,
     `alt="${escapeAttr(img.alt)}"`,
     img.title ? `title="${escapeAttr(img.title)}"` : "",
     `style="${styles.join(";")}"`,
@@ -121,6 +124,30 @@ const renderInline = (s: string): string => {
     .replace(/\u0000IMG(\d+)\u0000/g, (_m, i) => placeholders[+i] ?? "");
 };
 
+const tableAlignAttr = (alignment: MarkdownTable["alignments"][number]) =>
+  alignment === "default" ? "" : ` style="text-align:${alignment}"`;
+
+const renderTable = (table: MarkdownTable): string => {
+  const headers = table.headers
+    .map((cell, index) => `<th${tableAlignAttr(table.alignments[index] ?? "default")}>${renderInline(cell)}</th>`)
+    .join("");
+  const rows = table.rows
+    .map((row) => {
+      const cells = row
+        .map((cell, index) => `<td${tableAlignAttr(table.alignments[index] ?? "default")}>${renderInline(cell)}</td>`)
+        .join("");
+      return `<tr>${cells}</tr>`;
+    })
+    .join("");
+  return `<table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
+};
+
+const previewMetaForBlock = (kind: BlockKind, source: string): BlockPreviewMeta | undefined => {
+  if (kind !== "table") return undefined;
+  const table = parseMarkdownTable(source);
+  return table ? { table } : undefined;
+};
+
 const renderBlock = (kind: BlockKind, source: string): string => {
   const trimmed = source.trimEnd();
   switch (kind) {
@@ -149,8 +176,10 @@ const renderBlock = (kind: BlockKind, source: string): string => {
         .join("");
       return `<ul>${items}</ul>`;
     }
-    case "table":
-      return `<pre>${escapeHtml(trimmed)}</pre>`;
+    case "table": {
+      const table = parseMarkdownTable(trimmed);
+      return table ? renderTable(table) : `<pre>${escapeHtml(trimmed)}</pre>`;
+    }
     case "html":
       return trimmed;
     case "image": {
@@ -217,6 +246,7 @@ export const parseDocument = (
     const kind: BlockKind = parseImageBlock(buf) ? "image" : blockKindFromLine(startLine);
     const slice = source.slice(start, offset);
     const hash = hashStr(slice);
+    const preview = previewMetaForBlock(kind, buf);
     blocks.push({
       id: `b${hash.toString(16).padStart(8, "0")}-${blocks.length}`,
       kind,
@@ -224,6 +254,7 @@ export const parseDocument = (
       hash,
       source: slice,
       html: renderBlock(kind, buf),
+      ...(preview ? { preview } : {}),
     });
   }
 

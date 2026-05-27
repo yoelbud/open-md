@@ -2,21 +2,27 @@
 
 import type { MenuDef } from "./MenuBar";
 import {
+  applyLayoutPreset,
   BLOCK_TEMPLATES,
   canRedo,
   canUndo,
   insertBlockAfter,
+  LAYOUT_PRESETS,
   newDocument,
   openFile,
   redo,
+  resetLayout,
   saveFile,
   togglePane,
   undo,
+  useActiveLayout,
   usePaneVisible,
 } from "../store/document";
+import { exportPreviewPdf } from "../ipc/previewPdf";
 
 export const buildMenus = (): MenuDef[] => {
   const vis = usePaneVisible();
+  const activeLayout = useActiveLayout();
 
   const insertItems = BLOCK_TEMPLATES.map((t) => ({
     kind: "action" as const,
@@ -32,6 +38,8 @@ export const buildMenus = (): MenuDef[] => {
         { kind: "action", label: "Open…",     shortcut: "Ctrl+O", action: () => void openFile() },
         { kind: "sep" },
         { kind: "action", label: "Save",      shortcut: "Ctrl+S", action: () => void saveFile() },
+        { kind: "sep" },
+        { kind: "action", label: "Export Preview as PDF…", shortcut: "Ctrl+P", action: exportPreviewPdf },
         { kind: "sep" },
         { kind: "action", label: "Exit",      danger: true,       action: () => window.close() },
       ],
@@ -76,6 +84,22 @@ export const buildMenus = (): MenuDef[] => {
           shortcut: "Ctrl+3",
           checked: () => vis().preview,
           action: () => togglePane("preview"),
+        },
+        { kind: "sep" },
+        {
+          kind: "sub",
+          label: "Layout presets",
+          children: LAYOUT_PRESETS.map((preset) => ({
+            kind: "check" as const,
+            label: preset.label,
+            checked: () => activeLayout() === preset.id,
+            action: () => applyLayoutPreset(preset.id),
+          })),
+        },
+        {
+          kind: "action",
+          label: "Reset layout",
+          action: resetLayout,
         },
       ],
     },

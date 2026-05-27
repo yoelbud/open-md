@@ -1,0 +1,220 @@
+import { createMemo, createSignal, Index, Show } from "solid-js";
+import type { Block, MarkdownTable, TableColumnAlignment } from "../../ipc/types";
+import { formatMarkdownTable, normalizeMarkdownTable, parseMarkdownTable } from "../../markdown/table";
+import { replaceBlockSource } from "../../store/document";
+
+type Props = {
+  block: Block;
+  onEditSource: () => void;
+};
+
+type CellSection = "header" | "body";
+type ActiveCell = {
+  section: CellSection;
+  row: number;
+  col: number;
+};
+
+const ALIGNMENT_OPTIONS: { id: TableColumnAlignment; label: string }[] = [
+  { id: "default", label: "Auto" },
+  { id: "left", label: "Left" },
+  { id: "center", label: "Center" },
+  { id: "right", label: "Right" },
+];
+
+const cloneTable = (table: MarkdownTable): MarkdownTable => ({
+  headers: [...table.headers],
+  alignments: [...table.alignments],
+  rows: table.rows.map((row) => [...row]),
+});
+
+const emptyRow = (cols: number) => Array.from({ length: cols }, () => "");
+
+const alignStyle = (alignment: TableColumnAlignment | undefined) =>
+  alignment && alignment !== "default" ? alignment : undefined;
+
+const FALLBACK_TABLE: MarkdownTable = {
+  headers: ["Column 1"],
+  alignments: ["default"],
+  rows: [],
+};
+
+export const TableBlockView = (props: Props) => {
+  const table = createMemo(() =>
+    normalizeMarkdownTable(
+      props.block.preview?.table ?? parseMarkdownTable(props.block.source) ?? FALLBACK_TABLE,
+    ),
+  );
+  const [activeCell, setActiveCell] = createSignal<ActiveCell | null>(null);
+
+  const commit = (next: MarkdownTable) => {
+    const trailing = props.block.source.endsWith("\n") ? "\n" : "";
+    replaceBlockSource(props.block, formatMarkdownTable(next) + trailing);
+  };
+
+  const updateCell = (section: CellSection, row: number, col: number, value: string) => {
+    const next = cloneTable(table());
+    if (section === "header") {
+      next.headers[col] = value;
+    } else {
+      next.rows[row]![col] = value;
+    }
+    commit(next);
+  };
+
+  const addRow = () => {
+    const next = cloneTable(table());
+    const selected = activeCell();
+    const index = selected?.section === "body" ? selected.row + 1 : next.rows.length;
+    next.rows.splice(index, 0, emptyRow(next.headers.length));
+    setActiveCell({ section: "body", row: index, col: selected?.col ?? 0 });
+    commit(next);
+  };
+
+  const deleteRow = () => {
+    const selected = activeCell();
+    if (!selected || selected.section !== "body") return;
+    const next = cloneTable(table());
+    next.rows.splice(selected.row, 1);
+    setActiveCell(null);
+    commit(next);
+  };
+
+  const addColumn = () => {
+    const next = cloneTable(table());
+    const selected = activeCell();
+    const index = selected ? selected.col + 1 : next.headers.length;
+    next.headers.splice(index, 0, `Column ${index + 1}`);
+    next.alignments.splice(index, 0, "default");
+    for (const row of next.rows) row.splice(index, 0, "");
+    setActiveCell({ section: "header", row: 0, col: index });
+    commit(next);
+  };
+
+  const deleteColumn = () => {
+    const selected = activeCell();
+    const current = table();
+    if (!selected || current.headers.length <= 1) return;
+    const next = cloneTable(current);
+    next.headers.splice(selected.col, 1);
+    next.alignments.splice(selected.col, 1);
+    for (const row of next.rows) row.splice(selected.col, 1);
+    setActiveCell(null);
+    commit(next);
+  };
+
+  const setAlignment = (alignment: TableColumnAlignment) => {
+    const next = cloneTable(table());
+    const col = activeCell()?.col ?? 0;
+    next.alignments[col] = alignment;
+    commit(next);
+  };
+
+  const isActive = (section: CellSection, row: number, col: number) => {
+    const active = activeCell();
+    return active?.section === section && active.row === row && active.col === col;
+  };
+
+  const selectedAlignment = () => table().alignments[activeCell()?.col ?? 0] ?? "default";
+
+  return (
+    <div class="om-table-block">
+      <div class="om-table-toolbar">
+        <span class="om-table-meta">
+          {table().rows.length + 1} rows x {table().headers.length} cols
+        </span>
+        <button type="button" class="om-table-btn" onClick={addRow}>+ Row</button>
+        <button type="button" class="om-table-btn" onClick={addColumn}>+ Col</button>
+        <button
+          type="button"
+          class="om-table-btn"
+          disabled={activeCell()?.section !== "body"}
+          onClick={deleteRow}
+        >
+          Delete row
+        </button>
+        <button
+          type="button"
+          class="om-table-btn"
+          disabled={!activeCell() || table().headers.length <= 1}
+          onClick={deleteColumn}
+        >
+          Delete col
+        </button>
+        <span class="om-table-divider" />
+        <span class="om-table-label">Align</span>
+        <Index each={ALIGNMENT_OPTIONS}>
+          {(option) => (
+            <button
+              type="button"
+              class="om-table-btn"
+              classList={{ active: selectedAlignment() === option().id }}
+              onClick={() => setAlignment(option().id)}
+            >
+              {option().label}
+            </button>
+          )}
+        </Index>
+        <button type="button" class="om-table-btn" onClick={props.onEditSource}>MD</button>
+      </div>
+
+      <div class="om-table-scroll">
+        <table class="om-table-editor">
+          <thead>
+            <tr>
+              <Index each={table().headers}>
+                {(cell, col) => (
+                  <th
+                    classList={{ selected: isActive("header", 0, col) }}
+                    style={{ "text-align": alignStyle(table().alignments[col]) }}
+                  >
+                    <input
+                      value={cell()}
+                      aria-label={`Header ${col + 1}`}
+                      onFocus={() => setActiveCell({ section: "header", row: 0, col })}
+                      onInput={(e) => updateCell("header", 0, col, e.currentTarget.value)}
+                    />
+                  </th>
+                )}
+              </Index>
+            </tr>
+          </thead>
+          <tbody>
+            <Show
+              when={table().rows.length > 0}
+              fallback={
+                <tr>
+                  <td class="om-table-empty" colSpan={table().headers.length}>
+                    No body rows yet. Add a row to keep editing in the preview.
+                  </td>
+                </tr>
+              }
+            >
+              <Index each={table().rows}>
+                {(row, rowIndex) => (
+                  <tr>
+                    <Index each={row()}>
+                      {(cell, col) => (
+                        <td
+                          classList={{ selected: isActive("body", rowIndex, col) }}
+                          style={{ "text-align": alignStyle(table().alignments[col]) }}
+                        >
+                          <input
+                            value={cell()}
+                            aria-label={`Row ${rowIndex + 1}, column ${col + 1}`}
+                            onFocus={() => setActiveCell({ section: "body", row: rowIndex, col })}
+                            onInput={(e) => updateCell("body", rowIndex, col, e.currentTarget.value)}
+                          />
+                        </td>
+                      )}
+                    </Index>
+                  </tr>
+                )}
+              </Index>
+            </Show>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};

@@ -1,18 +1,31 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
+  applyLayoutPreset,
   BLOCK_TEMPLATES,
   canRedo,
   canUndo,
   insertBlockAfter,
   insertBlockAtStart,
+  LAYOUT_PRESETS,
+  movePane,
   newDocument,
+  PANE_SIZE_MIN,
   redo,
   replaceBlockSource,
+  resetLayout,
+  resetPreviewTypography,
+  resizePanePair,
+  setPreviewTypography,
   togglePane,
   undo,
+  useActiveLayout,
   useDocument,
+  usePaneOrder,
+  usePaneSizes,
   usePaneVisible,
+  useVisiblePanes,
   usePath,
+  usePreviewSettings,
   useSetSource,
   useSource,
 } from "../src/store/document";
@@ -20,6 +33,8 @@ import {
 const setSource = useSetSource();
 
 beforeEach(() => {
+  resetLayout();
+  resetPreviewTypography();
   newDocument();
   setSource("# H\n\nfirst\n\nsecond\n");
 });
@@ -73,6 +88,50 @@ describe("document store", () => {
     expect(usePaneVisible()().source).toBe(true);
   });
 
+  it("applies layout presets with order, sizes, visibility, and active state", () => {
+    applyLayoutPreset("write");
+
+    expect(useActiveLayout()()).toBe("write");
+    expect(usePaneOrder()()).toEqual(["source", "preview", "ir"]);
+    expect(useVisiblePanes()()).toEqual(["source", "preview"]);
+    expect(usePaneVisible()()).toEqual({
+      source: true,
+      ir: false,
+      preview: true,
+    });
+    expect(usePaneSizes()().preview).toBeGreaterThan(usePaneSizes()().ir);
+  });
+
+  it("moves panes relative to the visible layout and marks it custom", () => {
+    movePane("preview", -1);
+
+    expect(usePaneOrder()()).toEqual(["source", "preview", "ir"]);
+    expect(useVisiblePanes()()).toEqual(["source", "preview", "ir"]);
+    expect(useActiveLayout()()).toBe("custom");
+  });
+
+  it("resizes pane pairs while clamping to the minimum pane size", () => {
+    resizePanePair("source", "ir", 0.25);
+    expect(usePaneSizes()().source).toBeCloseTo(1.25, 2);
+    expect(usePaneSizes()().ir).toBeCloseTo(0.75, 2);
+    expect(useActiveLayout()()).toBe("custom");
+
+    resizePanePair("source", "ir", -10);
+    expect(usePaneSizes()().source).toBe(PANE_SIZE_MIN);
+    expect(usePaneSizes()().ir).toBeGreaterThan(PANE_SIZE_MIN);
+  });
+
+  it("resetLayout restores the balanced preset", () => {
+    applyLayoutPreset("review");
+    movePane("source", 1);
+
+    resetLayout();
+
+    expect(useActiveLayout()()).toBe("balanced");
+    expect(usePaneOrder()()).toEqual(["source", "ir", "preview"]);
+    expect(useVisiblePanes()()).toEqual(["source", "ir", "preview"]);
+  });
+
   it("BLOCK_TEMPLATES each have non-empty label + either snippet or getSnippet", () => {
     expect(BLOCK_TEMPLATES.length).toBeGreaterThan(0);
     for (const t of BLOCK_TEMPLATES) {
@@ -90,9 +149,40 @@ describe("document store", () => {
     expect(ids.size).toBe(BLOCK_TEMPLATES.length);
   });
 
+  it("LAYOUT_PRESETS have unique ids and at least one visible pane", () => {
+    const ids = new Set(LAYOUT_PRESETS.map((preset) => preset.id));
+    expect(ids.size).toBe(LAYOUT_PRESETS.length);
+    for (const preset of LAYOUT_PRESETS) {
+      expect(Object.values(preset.visible).some(Boolean)).toBe(true);
+      expect(preset.order).toHaveLength(3);
+    }
+  });
+
   it("newDocument clears path and source", () => {
     newDocument();
     expect(useSource()()).toBe("");
     expect(usePath()()).toBe("(untitled).md");
+  });
+
+  it("keeps preview typography as IR metadata instead of markdown source", () => {
+    const before = useSource()();
+
+    setPreviewTypography({ fontFamily: "serif", fontSizePx: 22, lineHeight: 1.9, contentWidth: "wide" });
+
+    expect(useSource()()).toBe(before);
+    expect(usePreviewSettings()()).toEqual({
+      fontFamily: "serif",
+      fontSizePx: 22,
+      lineHeight: 1.9,
+      contentWidth: "wide",
+    });
+    expect(useDocument().preview).toEqual(usePreviewSettings()());
+  });
+
+  it("clamps invalid preview typography values", () => {
+    setPreviewTypography({ fontSizePx: 99, lineHeight: 9 });
+
+    expect(usePreviewSettings()().fontSizePx).toBe(28);
+    expect(usePreviewSettings()().lineHeight).toBe(2.2);
   });
 });

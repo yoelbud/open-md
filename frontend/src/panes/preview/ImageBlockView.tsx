@@ -6,6 +6,7 @@ import {
   pickImageFromFile,
   replaceBlockSource,
 } from "../../store/document";
+import { resolveAssetSrc } from "../../store/assets";
 
 type Props = {
   block: Block;
@@ -115,7 +116,7 @@ export const ImageBlockView = (props: Props) => {
           <div class="om-img-inner">
             <img
               ref={imgRef}
-              src={img().src}
+              src={resolveAssetSrc(img().src)}
               alt={img().alt}
               title={img().title || undefined}
               style={{

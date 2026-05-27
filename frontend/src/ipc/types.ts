@@ -14,6 +14,28 @@ export type BlockKind =
   | "image"
   | "unknown";
 
+export type PreviewFontFamily = "sans" | "serif" | "mono";
+export type PreviewContentWidth = "fluid" | "readable" | "wide";
+
+export interface PreviewDocumentMeta {
+  fontFamily: PreviewFontFamily;
+  fontSizePx: number;
+  lineHeight: number;
+  contentWidth: PreviewContentWidth;
+}
+
+export type TableColumnAlignment = "default" | "left" | "center" | "right";
+
+export interface MarkdownTable {
+  headers: string[];
+  alignments: TableColumnAlignment[];
+  rows: string[][];
+}
+
+export interface BlockPreviewMeta {
+  table?: MarkdownTable;
+}
+
 export interface Block {
   id: string;
   kind: BlockKind;
@@ -21,9 +43,11 @@ export interface Block {
   hash: number;
   source: string;
   html: string;
+  preview?: BlockPreviewMeta;
 }
 
 export interface DocumentPayload {
   path: string;
   blocks: Block[];
+  preview?: PreviewDocumentMeta;
 }
