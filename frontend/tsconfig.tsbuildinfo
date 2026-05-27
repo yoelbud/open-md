@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/ipc/stub.ts","./src/ipc/types.ts","./src/panes/ir/irpane.tsx","./src/panes/preview/previewpane.tsx","./src/panes/source/sourcepane.tsx","./src/store/document.ts"],"version":"5.9.3"}
