@@ -1,0 +1,40 @@
+# open-md Copilot Instructions
+
+## Project Shape
+
+- `open-md` is a local Markdown viewer/editor with synchronized Source, IR, and Preview panes.
+- Rust workspace crates live under `crates\`: `om-core` owns segmentation and IR, `om-render` owns per-block HTML rendering, and `om-app` is the CLI/Tauri shell boundary.
+- The frontend is Solid.js, Vite, and TypeScript under `frontend\`.
+- Preserve the block-scoped pipeline: Markdown source -> block IR -> per-block HTML -> editable panes. Do not replace a targeted block update with whole-document reparsing or rerendering unless the task explicitly requires it.
+
+## Agent Workflow
+
+- Prefer the workspace custom agents for focused work:
+  - `OpenMD Testing` for targeted/full tests and failure triage.
+  - `OpenMD Linting` for clippy, TypeScript, doc, and build quality gates.
+  - `OpenMD Formatting` for formatter checks and `cargo fmt`.
+  - `OpenMD Maintainer` for implementation work that should coordinate specialists.
+- Use the `open-md-quality` skill before finishing code changes or when choosing validation commands.
+- Use the `markdown-feature` skill when changing Markdown syntax support, block kinds, IR schema, rendering, editable preview behavior, fixtures, or source/IR/preview synchronization.
+- Keep Rust and frontend contract surfaces in sync when the IR shape changes, especially `BlockKind`, `Block`, and payload fields.
+
+## Commands
+
+- Rust format check: `cargo fmt --all --check`
+- Rust format apply: `cargo fmt --all`
+- Rust lint: `cargo clippy --workspace --all-targets --locked -- -D warnings`
+- Rust tests: `cargo test --workspace --locked`
+- Rust build: `cargo build --workspace --all-targets --locked`
+- Rust docs: `cargo doc --workspace --no-deps --locked`
+- Frontend install: `Set-Location frontend && npm ci`
+- Frontend typecheck: `Set-Location frontend && npm run typecheck`
+- Frontend tests: `Set-Location frontend && npm test`
+- Frontend build: `Set-Location frontend && npm run build`
+
+## Conventions
+
+- In Copilot CLI on Windows, use PowerShell commands and Windows path separators. Keep committed code, docs, and CI platform-neutral unless the task is Windows-specific.
+- Do not add new linting, formatting, testing, or package-management tools unless explicitly requested. The frontend currently has typecheck, test, and build scripts, but no ESLint or Prettier script.
+- Dependencies are exact-pinned. Do not upgrade or add dependencies for convenience.
+- Rust has strict workspace lints: unsafe code is forbidden, `clippy::all` is denied, and public Rust APIs should have useful docs.
+- Tests should protect core invariants: exact `src_range`, stable hashes for unchanged blocks, per-block rendering, CLI JSON payload shape, and frontend state synchronization.
