@@ -28,3 +28,4 @@ crates/om-app/gen/schemas/
 Thumbs.db
 *.swp
 om-app-windows-x86_64.zip
+*.tsbuildinfo
