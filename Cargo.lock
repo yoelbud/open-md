@@ -235,7 +235,7 @@ dependencies = [
 
 [[package]]
 name = "om-app"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "insta",
@@ -247,7 +247,7 @@ dependencies = [
 
 [[package]]
 name = "om-core"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "proptest",
  "pulldown-cmark",
@@ -259,7 +259,7 @@ dependencies = [
 
 [[package]]
 name = "om-render"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "insta",
  "om-core",
