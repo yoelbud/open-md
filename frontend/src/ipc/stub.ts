@@ -84,7 +84,7 @@ const escapeAttr = (s: string) =>
 const blockKindFromLine = (line: string): BlockKind => {
   if (/^#{1,6}\s/.test(line)) return "heading";
   if (/^(\*{3,}|-{3,}|_{3,})\s*$/.test(line)) return "thematic_break";
-  if (/^```/.test(line)) return "code";
+  if (/^(```|~~~)/.test(line)) return "code";
   if (/^>\s?/.test(line)) return "block_quote";
   if (/^\s*[-*+]\s\[[ xX]\]\s/.test(line)) return "task_list";
   if (/^\s*([-*+]|\d+\.)\s/.test(line)) return "list";
@@ -142,6 +142,16 @@ const renderTable = (table: MarkdownTable): string => {
   return `<table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
 };
 
+const fencedCode = (source: string): { info: string; body: string } | null => {
+  const normalized = source.trimEnd();
+  const match = /^(```|~~~)([^\n]*)\n?([\s\S]*?)\n?\1$/.exec(normalized);
+  if (!match) return null;
+  return { info: match[2]?.trim() ?? "", body: match[3] ?? "" };
+};
+
+const isMermaidInfo = (info: string): boolean =>
+  (info.split(/\s+/)[0] ?? "").toLowerCase() === "mermaid";
+
 const previewMetaForBlock = (kind: BlockKind, source: string): BlockPreviewMeta | undefined => {
   if (kind !== "table") return undefined;
   const table = parseMarkdownTable(source);
@@ -160,7 +170,11 @@ const renderBlock = (kind: BlockKind, source: string): string => {
     case "thematic_break":
       return "<hr/>";
     case "code": {
-      const body = trimmed.replace(/^```\w*\n?/, "").replace(/```$/, "");
+      const code = fencedCode(trimmed);
+      const body = code?.body ?? trimmed.replace(/^```\w*\n?/, "").replace(/```$/, "");
+      if (code && isMermaidInfo(code.info)) {
+        return `<pre class="mermaid" data-om-mermaid>${escapeHtml(body)}</pre>`;
+      }
       return `<pre><code>${escapeHtml(body)}</code></pre>`;
     }
     case "block_quote":
@@ -227,13 +241,14 @@ export const parseDocument = (
     offset += startLine.length + 1;
     i++;
 
-    if (/^```/.test(startLine)) {
+    const fence = /^(```|~~~)/.exec(startLine)?.[1];
+    if (fence) {
       while (i < lines.length) {
         const ln = lines[i]!;
         buf += "\n" + ln;
         offset += ln.length + 1;
         i++;
-        if (/^```/.test(ln)) break;
+        if (ln.startsWith(fence)) break;
       }
     } else {
       while (i < lines.length && lines[i]!.trim() !== "") {

@@ -661,6 +661,30 @@ html, body, #root {
 .preview-block.hidden { display: none; }
 .preview-block { cursor: text; border-radius: 3px; }
 .preview-block:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.preview-block .mermaid {
+  display: block;
+  overflow-x: auto;
+  padding: 12px;
+  background: color-mix(in srgb, var(--bg-pane-alt) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 6px;
+  text-align: center;
+}
+.preview-block .mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.om-mermaid-error {
+  color: #fca5a5;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: left;
+}
+.om-mermaid-source {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  text-align: left;
+}
 .preview-edit-ta {
   width: 100%;
   display: block;
