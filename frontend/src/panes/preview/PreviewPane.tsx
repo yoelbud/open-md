@@ -46,6 +46,60 @@ const PREVIEW_WIDTH_CSS: Record<PreviewContentWidth, string> = {
   wide: "1040px",
 };
 
+type MermaidApi = typeof import("mermaid").default;
+
+let mermaidPromise: Promise<MermaidApi> | undefined;
+
+const loadMermaid = async (): Promise<MermaidApi> => {
+  mermaidPromise ??= import("mermaid").then((module) => {
+    module.default.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+    });
+    return module.default;
+  });
+  return mermaidPromise;
+};
+
+const renderMermaidBlocks = async (root: HTMLElement, blockId: string, version: number) => {
+  const nodes = Array.from(root.querySelectorAll<HTMLElement>("[data-om-mermaid]"));
+  if (!nodes.length) return;
+
+  try {
+    const mermaid = await loadMermaid();
+    await Promise.all(nodes.map(async (node, index) => {
+      if (!root.isConnected || root.dataset.mermaidVersion !== String(version)) return;
+      const source = node.textContent ?? "";
+      const renderId = `om-mermaid-${blockId.replace(/[^A-Za-z0-9_-]/g, "-")}-${version}-${index}`;
+      const rendered = await mermaid.render(renderId, source);
+      if (!root.isConnected || root.dataset.mermaidVersion !== String(version)) return;
+      node.innerHTML = rendered.svg;
+      node.removeAttribute("data-om-mermaid");
+      rendered.bindFunctions?.(node);
+    }));
+  } catch (err) {
+    if (!root.isConnected || root.dataset.mermaidVersion !== String(version)) return;
+    const message = err instanceof Error ? err.message : String(err);
+    for (const node of nodes) {
+      const source = node.textContent ?? "";
+      node.replaceChildren();
+
+      const error = document.createElement("div");
+      error.className = "om-mermaid-error";
+      error.setAttribute("role", "alert");
+      error.textContent = `Mermaid render failed: ${message}`;
+
+      const details = document.createElement("pre");
+      details.className = "om-mermaid-source";
+      details.textContent = source;
+
+      node.classList.add("om-mermaid-failed");
+      node.removeAttribute("data-om-mermaid");
+      node.append(error, details);
+    }
+  }
+};
+
 // ── view → markdown round-trip (M0 stub, replaced by Rust in M4) ──────────
 const textToMarkdown = (block: Block, text: string): string => {
   const trimmed = text.replace(/\u00a0/g, " ").trimEnd();
@@ -77,6 +131,7 @@ const PreviewBlockRow = (props: { block: Block }) => {
   const editingPoint = useEditingPoint();
   let viewRef: HTMLDivElement | undefined;
   let taRef: HTMLTextAreaElement | undefined;
+  let renderVersion = 0;
 
   const isEditingPoint = () => {
     const point = editingPoint();
@@ -104,7 +159,10 @@ const PreviewBlockRow = (props: { block: Block }) => {
   createEffect(() => {
     const html = props.block.html;
     if (!viewRef || editing()) return;
-    if (viewRef.innerHTML !== html) viewRef.innerHTML = html;
+    renderVersion += 1;
+    viewRef.dataset.mermaidVersion = String(renderVersion);
+    viewRef.innerHTML = html;
+    void renderMermaidBlocks(viewRef, props.block.id, renderVersion);
   });
 
   // Auto-focus + select textarea when entering edit mode.

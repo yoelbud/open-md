@@ -3,6 +3,7 @@ import type { JSX } from "solid-js";
 import { SourcePane } from "./panes/source/SourcePane";
 import { IrPane } from "./panes/ir/IrPane";
 import { PreviewPane } from "./panes/preview/PreviewPane";
+import { PrintPreview } from "./panes/preview/PrintPreview";
 import { MenuBar } from "./menubar/MenuBar";
 import { buildMenus } from "./menubar/menus";
 import {
@@ -195,6 +196,7 @@ export const App = () => {
   });
 
   return (
+    <>
     <div class="app">
       <div class="titlebar">
         <MenuBar menus={menus} />
@@ -296,5 +298,7 @@ export const App = () => {
         </For>
       </div>
     </div>
+    <PrintPreview />
+    </>
   );
 };
