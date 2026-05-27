@@ -40,6 +40,37 @@ cargo check --workspace
 cd crates/om-app && cargo run
 ```
 
+## Testing
+
+The project has multiple test layers, all enforced in CI:
+
+```sh
+# Rust: format, lints, unit + property + snapshot + CLI integration + doc tests
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+
+# Frontend: strict TypeScript + Vitest unit tests + production build
+cd frontend
+npm run typecheck
+npm test
+npm run build
+```
+
 ## License
 
-Dual-licensed under MIT or Apache-2.0.
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+  <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or
+  <https://opensource.org/licenses/MIT>)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in the work by you, as defined in the Apache-2.0
+license, shall be dual licensed as above, without any additional terms or
+conditions.

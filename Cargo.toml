@@ -6,7 +6,7 @@ members = ["crates/om-core", "crates/om-render", "crates/om-app"]
 version = "0.0.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/yobud/open-md"
+repository = "https://github.com/yoelbud/open-md"
 rust-version = "1.78"
 
 # Strict, exact pinning. We want reproducible builds and explicit upgrades.
