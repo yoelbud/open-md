@@ -3,10 +3,18 @@
 **/*.rs.bk
 Cargo.lock.bak
 
+# Proptest auto-generated regression files are checked in by convention
+# (so failing seeds reproduce on every machine), so we do NOT ignore them.
+
+# Insta snapshot work-in-progress files (committed `.snap`, ignored `.snap.new`).
+**/*.snap.new
+.cargo-ok
+
 # Node
 node_modules/
 dist/
 .vite/
+coverage/
 
 # Tauri build artifacts
 crates/om-app/target/

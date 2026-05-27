@@ -5,6 +5,79 @@
 
 import type { Block, BlockKind, DocumentPayload } from "./types";
 
+// Inline-image regex with optional title and optional Maruku-style "=WxH"
+// size hint. Captures: 1=alt, 2=url, 3=title (no quotes), 4=size token (no "=").
+//   ![alt](src)
+//   ![alt](src "title")
+//   ![alt](src =300x200)         px sizes
+//   ![alt](src "title" =50%x)    percent + auto
+const IMG_RE =
+  /!\[([^\]]*)\]\(\s*([^()\s"']+)(?:\s+"([^"]*)")?(?:\s+=([0-9]*%?x[0-9]*%?))?\s*\)/g;
+
+// Parse a CSS dimension out of "300", "300px", "50%", "" (empty/auto).
+const parseDim = (s: string | undefined): string | null => {
+  if (!s) return null;
+  if (/^\d+%$/.test(s)) return s;
+  if (/^\d+$/.test(s)) return `${s}px`;
+  return null;
+};
+
+// Pull the trailing {.center} / {.left} / {.right} class attr off a string.
+// Returns [stripped, align] where align is "left" | "center" | "right" | null.
+const stripAlignAttr = (s: string): [string, "left" | "center" | "right" | null] => {
+  const m = /\{\s*\.(left|center|right)\s*\}\s*$/.exec(s);
+  if (!m) return [s, null];
+  return [s.slice(0, m.index).trimEnd(), m[1] as "left" | "center" | "right"];
+};
+
+export type ParsedImage = {
+  alt: string;
+  src: string;
+  title: string;
+  width: string | null;    // CSS dim or null
+  height: string | null;
+  align: "left" | "center" | "right" | null;
+};
+
+// Parse a full image-only block source (without trailing newlines). Returns
+// null if the buffer isn't a single image (possibly with a trailing {.align}).
+export const parseImageBlock = (raw: string): ParsedImage | null => {
+  const [stripped, align] = stripAlignAttr(raw.trim());
+  const re = new RegExp(`^${IMG_RE.source}$`);
+  const m = re.exec(stripped);
+  if (!m) return null;
+  const [w, h] = (m[4] ?? "x").split("x");
+  return {
+    alt: m[1] ?? "",
+    src: m[2] ?? "",
+    title: m[3] ?? "",
+    width: parseDim(w),
+    height: parseDim(h),
+    align,
+  };
+};
+
+const renderImgTag = (img: ParsedImage): string => {
+  const styles: string[] = [];
+  if (img.width) styles.push(`width:${img.width}`);
+  if (img.height) styles.push(`height:${img.height}`);
+  if (!img.width && !img.height) styles.push("max-width:100%");
+  const attrs = [
+    `src="${escapeAttr(img.src)}"`,
+    `alt="${escapeAttr(img.alt)}"`,
+    img.title ? `title="${escapeAttr(img.title)}"` : "",
+    `style="${styles.join(";")}"`,
+    `loading="lazy"`,
+    `draggable="false"`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `<img ${attrs}/>`;
+};
+
+const escapeAttr = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 const blockKindFromLine = (line: string): BlockKind => {
   if (/^#{1,6}\s/.test(line)) return "heading";
   if (/^(\*{3,}|-{3,}|_{3,})\s*$/.test(line)) return "thematic_break";
@@ -21,15 +94,32 @@ const blockKindFromLine = (line: string): BlockKind => {
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const renderInline = (s: string): string =>
-  escapeHtml(s)
+const renderInline = (s: string): string => {
+  // Pull images out first (before escaping) so we can emit raw <img> tags.
+  const placeholders: string[] = [];
+  const withImgs = s.replace(IMG_RE, (_match, alt, src, title, size) => {
+    const [w, h] = (size ?? "x").split("x");
+    const tag = renderImgTag({
+      alt: alt ?? "",
+      src: src ?? "",
+      title: title ?? "",
+      width: parseDim(w),
+      height: parseDim(h),
+      align: null,
+    });
+    placeholders.push(tag);
+    return `\u0000IMG${placeholders.length - 1}\u0000`;
+  });
+  return escapeHtml(withImgs)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
     .replace(
       /\[([^\]]+)\]\(([^)]+)\)/g,
       '<a href="$2" target="_blank" rel="noreferrer">$1</a>',
-    );
+    )
+    .replace(/\u0000IMG(\d+)\u0000/g, (_m, i) => placeholders[+i] ?? "");
+};
 
 const renderBlock = (kind: BlockKind, source: string): string => {
   const trimmed = source.trimEnd();
@@ -63,6 +153,12 @@ const renderBlock = (kind: BlockKind, source: string): string => {
       return `<pre>${escapeHtml(trimmed)}</pre>`;
     case "html":
       return trimmed;
+    case "image": {
+      const img = parseImageBlock(trimmed);
+      if (!img) return `<p>${renderInline(trimmed)}</p>`;
+      const alignClass = img.align ? ` om-img-${img.align}` : "";
+      return `<div class="om-img-wrap${alignClass}">${renderImgTag(img)}</div>`;
+    }
     default:
       return `<p>${renderInline(trimmed)}</p>`;
   }
@@ -118,14 +214,15 @@ export const parseDocument = (
       }
     }
 
-    const kind = blockKindFromLine(startLine);
-    const hash = hashStr(buf);
+    const kind: BlockKind = parseImageBlock(buf) ? "image" : blockKindFromLine(startLine);
+    const slice = source.slice(start, offset);
+    const hash = hashStr(slice);
     blocks.push({
       id: `b${hash.toString(16).padStart(8, "0")}-${blocks.length}`,
       kind,
       src_range: [start, offset],
       hash,
-      source: buf,
+      source: slice,
       html: renderBlock(kind, buf),
     });
   }

@@ -1,20 +1,20 @@
 //! open-md M0 CLI smoke test.
 //!
-//! Reads a markdown file, segments it into blocks, and prints the IR + HTML
+//! Reads a Markdown file, segments it into blocks, and prints the IR + HTML
 //! as JSON. This is the same data shape the Tauri IPC layer will return in
 //! M1, so the frontend can already consume it via piped input during early
 //! development.
 
 use std::{fs, path::PathBuf, process::ExitCode};
 
-use om_core::segment;
+use om_core::{segment, BlockKind};
 use om_render::render_block;
 use serde::Serialize;
 
 #[derive(Serialize)]
 struct RenderedBlock<'a> {
     id: &'a str,
-    kind: om_core::BlockKind,
+    kind: BlockKind,
     src_range: (usize, usize),
     hash: u64,
     source: &'a str,
@@ -27,26 +27,18 @@ struct Payload<'a> {
     blocks: Vec<RenderedBlock<'a>>,
 }
 
-fn main() -> ExitCode {
+fn run() -> Result<(), (u8, String)> {
     let args: Vec<String> = std::env::args().collect();
-    let path = match args.get(1) {
-        Some(p) => PathBuf::from(p),
-        None => {
-            eprintln!("usage: om-app <file.md>");
-            return ExitCode::from(2);
-        }
-    };
+    let path = args
+        .get(1)
+        .map(PathBuf::from)
+        .ok_or_else(|| (2u8, "usage: om-app <file.md>".to_string()))?;
 
-    let src = match fs::read_to_string(&path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("failed to read {}: {e}", path.display());
-            return ExitCode::from(1);
-        }
-    };
+    let src = fs::read_to_string(&path)
+        .map_err(|e| (1, format!("failed to read {}: {e}", path.display())))?;
 
     let doc = segment(&src);
-    let blocks: Vec<RenderedBlock> = doc
+    let blocks: Vec<RenderedBlock<'_>> = doc
         .blocks
         .iter()
         .map(|b| RenderedBlock {
@@ -64,14 +56,18 @@ fn main() -> ExitCode {
         blocks,
     };
 
-    match serde_json::to_string_pretty(&payload) {
-        Ok(s) => {
-            println!("{s}");
-            ExitCode::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("serialization failed: {e}");
-            ExitCode::from(1)
+    let json = serde_json::to_string_pretty(&payload)
+        .map_err(|e| (1, format!("serialization failed: {e}")))?;
+    println!("{json}");
+    Ok(())
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err((code, msg)) => {
+            eprintln!("{msg}");
+            ExitCode::from(code)
         }
     }
 }

@@ -11,6 +11,7 @@ export type BlockKind =
   | "thematic_break"
   | "html"
   | "task_list"
+  | "image"
   | "unknown";
 
 export interface Block {

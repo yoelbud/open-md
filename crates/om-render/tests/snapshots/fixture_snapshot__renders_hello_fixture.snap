@@ -1,0 +1,30 @@
+---
+source: crates/om-render/tests/fixture_snapshot.rs
+assertion_line: 24
+expression: rendered
+snapshot_kind: text
+---
+- - Heading
+  - "<h1>Hello, open-md</h1>\n"
+- - Paragraph
+  - "<p>This is a sample fixture used during development. It exercises every\nblock kind the M0 segmenter understands.</p>\n"
+- - Heading
+  - "<h2>Lists</h2>\n"
+- - List
+  - "<ul>\n<li>one</li>\n<li>two</li>\n<li>three with <code>inline code</code></li>\n</ul>\n"
+- - Heading
+  - "<h2>A code block</h2>\n"
+- - Code
+  - "<pre><code class=\"language-rust\">fn main() {\n    println!(\"hello, world\");\n}\n</code></pre>\n"
+- - Heading
+  - "<h2>A table</h2>\n"
+- - Table
+  - "<table><thead><tr><th>col a</th><th>col b</th></tr></thead><tbody>\n<tr><td>1</td><td>2</td></tr>\n</tbody></table>\n"
+- - Heading
+  - "<h2>Task list</h2>\n"
+- - List
+  - "<ul>\n<li><input disabled=\"\" type=\"checkbox\" checked=\"\"/>\nscaffold the workspace</li>\n<li><input disabled=\"\" type=\"checkbox\"/>\nwire up Tauri</li>\n<li><input disabled=\"\" type=\"checkbox\"/>\nadd CodeMirror</li>\n</ul>\n"
+- - ThematicBreak
+  - "<hr />\n"
+- - BlockQuote
+  - "<blockquote>\n<p>A blockquote, with <strong>bold</strong> and <em>italic</em> text and a <a href=\"https://example.com\">link</a>.</p>\n</blockquote>\n"

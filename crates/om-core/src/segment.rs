@@ -1,24 +1,24 @@
 //! Coarse block segmenter — turns raw Markdown into a flat list of top-level
 //! blocks with stable IDs.
 //!
-//! M0 implementation: uses pulldown-cmark's offset iterator to find the byte
-//! ranges of top-level blocks. Later milestones will add finer-grained AST
-//! per block and incremental re-segmentation.
+//! M0 implementation: uses [`pulldown_cmark`]'s offset iterator to find the
+//! byte ranges of top-level blocks. Later milestones will add finer-grained
+//! AST per block and incremental re-segmentation.
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use xxhash_rust::xxh3::xxh3_64;
 
 use crate::ir::{Block, BlockKind, Document};
 
-fn opts() -> Options {
+const fn opts() -> Options {
     Options::ENABLE_TABLES
-        | Options::ENABLE_TASKLISTS
-        | Options::ENABLE_STRIKETHROUGH
-        | Options::ENABLE_FOOTNOTES
-        | Options::ENABLE_SMART_PUNCTUATION
+        .union(Options::ENABLE_TASKLISTS)
+        .union(Options::ENABLE_STRIKETHROUGH)
+        .union(Options::ENABLE_FOOTNOTES)
+        .union(Options::ENABLE_SMART_PUNCTUATION)
 }
 
-fn kind_for_tag(tag: &Tag<'_>) -> Option<BlockKind> {
+const fn kind_for_tag(tag: &Tag<'_>) -> Option<BlockKind> {
     Some(match tag {
         Tag::Heading { .. } => BlockKind::Heading,
         Tag::Paragraph => BlockKind::Paragraph,
@@ -31,11 +31,16 @@ fn kind_for_tag(tag: &Tag<'_>) -> Option<BlockKind> {
     })
 }
 
-/// Segment `source` into top-level blocks.
+/// Segment `source` into top-level Markdown blocks.
+///
+/// Each top-level block in the source is returned with its byte range,
+/// raw source text, and content hash. Lists, tables and block quotes are
+/// emitted as a single block (their nested contents are not split out).
+#[must_use]
 pub fn segment(source: &str) -> Document {
     let parser = Parser::new_ext(source, opts()).into_offset_iter();
     let mut blocks = Vec::new();
-    let mut depth = 0i32;
+    let mut depth: i32 = 0;
     let mut current_kind: Option<BlockKind> = None;
     let mut current_start: usize = 0;
 
@@ -48,13 +53,15 @@ pub fn segment(source: &str) -> Document {
                 }
                 depth += 1;
             }
-            Event::End(TagEnd::Heading(_))
-            | Event::End(TagEnd::Paragraph)
-            | Event::End(TagEnd::List(_))
-            | Event::End(TagEnd::CodeBlock)
-            | Event::End(TagEnd::Table)
-            | Event::End(TagEnd::BlockQuote(_))
-            | Event::End(TagEnd::HtmlBlock) => {
+            Event::End(
+                TagEnd::Heading(_)
+                | TagEnd::Paragraph
+                | TagEnd::List(_)
+                | TagEnd::CodeBlock
+                | TagEnd::Table
+                | TagEnd::BlockQuote(_)
+                | TagEnd::HtmlBlock,
+            ) => {
                 depth -= 1;
                 if depth == 0 {
                     let kind = current_kind.take().unwrap_or(BlockKind::Unknown);
@@ -64,16 +71,14 @@ pub fn segment(source: &str) -> Document {
             Event::End(_) => {
                 depth -= 1;
             }
-            Event::Rule => {
-                if depth == 0 {
-                    push_block(
-                        &mut blocks,
-                        source,
-                        range.start,
-                        range.end,
-                        BlockKind::ThematicBreak,
-                    );
-                }
+            Event::Rule if depth == 0 => {
+                push_block(
+                    &mut blocks,
+                    source,
+                    range.start,
+                    range.end,
+                    BlockKind::ThematicBreak,
+                );
             }
             _ => {}
         }
@@ -85,7 +90,6 @@ pub fn segment(source: &str) -> Document {
 fn push_block(out: &mut Vec<Block>, source: &str, start: usize, end: usize, kind: BlockKind) {
     let slice = &source[start..end];
     let hash = xxh3_64(slice.as_bytes());
-    // M0 placeholder ID: hash + index. Stable-across-edits IDs come in M2.
     let id = format!("b{:016x}-{}", hash, out.len());
     out.push(Block {
         id,
@@ -122,5 +126,39 @@ mod tests {
         let a = segment(src);
         let b = segment(src);
         assert_eq!(a.blocks[0].hash, b.blocks[0].hash);
+    }
+
+    #[test]
+    fn src_ranges_cover_block_source() {
+        let src = "# H\n\npara\n\n- l1\n- l2\n";
+        let doc = segment(src);
+        for b in &doc.blocks {
+            let (s, e) = b.src_range;
+            assert!(e <= src.len());
+            assert_eq!(&src[s..e], b.source);
+        }
+    }
+
+    #[test]
+    fn thematic_break_emitted_at_top_level() {
+        let src = "before\n\n---\n\nafter\n";
+        let kinds: Vec<_> = segment(src).blocks.iter().map(|b| b.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                BlockKind::Paragraph,
+                BlockKind::ThematicBreak,
+                BlockKind::Paragraph,
+            ]
+        );
+    }
+
+    #[test]
+    fn unchanged_blocks_keep_their_hashes_after_edit() {
+        let before = segment("# Title\n\npara one\n\npara two\n");
+        let after = segment("# Title\n\npara ONE\n\npara two\n");
+        assert_eq!(before.blocks[0].hash, after.blocks[0].hash);
+        assert_ne!(before.blocks[1].hash, after.blocks[1].hash);
+        assert_eq!(before.blocks[2].hash, after.blocks[2].hash);
     }
 }
