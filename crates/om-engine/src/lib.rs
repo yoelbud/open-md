@@ -78,6 +78,8 @@ mod tests {
 
         assert_eq!(payload.blocks[0].kind, BlockKind::Image);
         assert!(payload.blocks[0].html.contains("om-img-center"));
-        assert!(payload.blocks[0].html.contains("data-om-src=\"https://x/y.png\""));
+        assert!(payload.blocks[0]
+            .html
+            .contains("data-om-src=\"https://x/y.png\""));
     }
 }

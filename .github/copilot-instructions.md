@@ -38,3 +38,22 @@
 - Dependencies are exact-pinned. Do not upgrade or add dependencies for convenience.
 - Rust has strict workspace lints: unsafe code is forbidden, `clippy::all` is denied, and public Rust APIs should have useful docs.
 - Tests should protect core invariants: exact `src_range`, stable hashes for unchanged blocks, per-block rendering, CLI JSON payload shape, and frontend state synchronization.
+## Resilient File Editing
+
+When the `edit` tool is interrupted or stalls, fall back immediately to PowerShell string replacement — do not retry the same `edit` call:
+
+```powershell
+$file = "path\to\file"
+$content = Get-Content $file -Raw
+$content = $content -replace '(?s)old pattern', 'new content'
+# OR for literal strings:
+$content = $content.Replace('exact old text', 'new text')
+Set-Content $file $content -NoNewline
+```
+
+Key rules:
+- Use `-replace` with `(?s)` flag for multi-line patterns.
+- Use `.Replace()` for literal strings (no regex special chars).
+- Always verify with `Select-String` or `Get-Content` after writing.
+- When adding new crates to `Cargo.toml`, run `cargo test --workspace` without `--locked` first to update `Cargo.lock`, then subsequent runs can use `--locked`.
+- Vitest cannot load real WASM; the `wasmStubPlugin` in `vite.config.ts` provides a virtual module when `src/wasm/om_wasm.js` is absent.

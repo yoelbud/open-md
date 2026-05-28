@@ -1,4 +1,4 @@
-//! Markdown image helpers used by segmentation and rendering.
+﻿//! Markdown image helpers used by segmentation and rendering.
 
 /// Alignment marker accepted after an image-only block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -112,11 +112,7 @@ type ImageDestination = (String, Option<String>, Option<String>, Option<String>)
 fn parse_image_destination(inner: &str) -> Option<ImageDestination> {
     let mut parts = inner.splitn(2, char::is_whitespace);
     let src = parts.next()?.trim();
-    if src.is_empty()
-        || src
-            .chars()
-            .any(|ch| matches!(ch, '(' | ')' | '"' | '\''))
-    {
+    if src.is_empty() || src.chars().any(|ch| matches!(ch, '(' | ')' | '"' | '\'')) {
         return None;
     }
 
@@ -150,6 +146,7 @@ fn parse_size_token(size: &str) -> Option<(Option<String>, Option<String>)> {
     Some((parse_dimension(width)?, parse_dimension(height)?))
 }
 
+#[allow(clippy::option_option)] // inner None = omitted dim, outer None = parse error; enum would add complexity for no gain
 fn parse_dimension(value: &str) -> Option<Option<String>> {
     if value.is_empty() {
         return Some(None);
@@ -157,9 +154,7 @@ fn parse_dimension(value: &str) -> Option<Option<String>> {
     if value.chars().all(|ch| ch.is_ascii_digit()) {
         return Some(Some(format!("{value}px")));
     }
-    let Some(number) = value.strip_suffix('%') else {
-        return None;
-    };
+    let number = value.strip_suffix('%')?;
     if number.is_empty() || !number.chars().all(|ch| ch.is_ascii_digit()) {
         return None;
     }
