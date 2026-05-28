@@ -4,6 +4,7 @@ import { SourcePane } from "./panes/source/SourcePane";
 import { IrPane } from "./panes/ir/IrPane";
 import { PreviewPane } from "./panes/preview/PreviewPane";
 import { PrintPreview } from "./panes/preview/PrintPreview";
+import { ProjectSidebar } from "./panes/project/ProjectSidebar";
 import { MenuBar } from "./menubar/MenuBar";
 import { buildMenus } from "./menubar/menus";
 import {
@@ -250,52 +251,55 @@ export const App = () => {
           </div>
         </div>
       </div>
-      <div
-        ref={panesRef}
-        class="panes"
-        style={{ "grid-template-columns": columns() }}
-      >
-        <For each={visiblePanes()}>
-          {(id, index) => {
-            const nextPane = () => visiblePanes()[index() + 1];
-            return (
-              <>
-                <div
-                  class="pane-frame"
-                  data-pane-id={id}
-                  classList={{
-                    dragging: draggingPane() === id,
-                    "drop-before": isDropTarget(id, "before"),
-                    "drop-after": isDropTarget(id, "after"),
-                  }}
-                  onDragOver={(e) => handlePaneDragOver(e, id)}
-                  onDragLeave={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                      setDropTarget(null);
-                    }
-                  }}
-                  onDrop={(e) => handlePaneDrop(e, id)}
-                >
-                  {renderPane(id)}
-                </div>
-                <Show when={nextPane()}>
-                  {(rightId) => (
-                    <div
-                      class="pane-resizer"
-                      role="separator"
-                      aria-orientation="vertical"
-                      title="Drag to resize panes · double-click to reset sizes"
-                      onPointerDown={(e) => startResize(e, id, rightId())}
-                      onDblClick={resetPaneSizes}
-                    >
-                      <span />
-                    </div>
-                  )}
-                </Show>
-              </>
-            );
-          }}
-        </For>
+      <div class="workspace">
+        <ProjectSidebar />
+        <div
+          ref={panesRef}
+          class="panes"
+          style={{ "grid-template-columns": columns() }}
+        >
+          <For each={visiblePanes()}>
+            {(id, index) => {
+              const nextPane = () => visiblePanes()[index() + 1];
+              return (
+                <>
+                  <div
+                    class="pane-frame"
+                    data-pane-id={id}
+                    classList={{
+                      dragging: draggingPane() === id,
+                      "drop-before": isDropTarget(id, "before"),
+                      "drop-after": isDropTarget(id, "after"),
+                    }}
+                    onDragOver={(e) => handlePaneDragOver(e, id)}
+                    onDragLeave={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                        setDropTarget(null);
+                      }
+                    }}
+                    onDrop={(e) => handlePaneDrop(e, id)}
+                  >
+                    {renderPane(id)}
+                  </div>
+                  <Show when={nextPane()}>
+                    {(rightId) => (
+                      <div
+                        class="pane-resizer"
+                        role="separator"
+                        aria-orientation="vertical"
+                        title="Drag to resize panes · double-click to reset sizes"
+                        onPointerDown={(e) => startResize(e, id, rightId())}
+                        onDblClick={resetPaneSizes}
+                      >
+                        <span />
+                      </div>
+                    )}
+                  </Show>
+                </>
+              );
+            }}
+          </For>
+        </div>
       </div>
     </div>
     <PrintPreview />
