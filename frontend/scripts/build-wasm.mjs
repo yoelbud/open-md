@@ -17,11 +17,8 @@ const wasmInput = join(
   "om_wasm.wasm",
 );
 
-const commandName = (command) =>
-  process.platform === "win32" ? `${command}.cmd` : command;
-
 const run = (command, args, options = {}) => {
-  const result = spawnSync(commandName(command), args, {
+  const result = spawnSync(command, args, {
     cwd: repoRoot,
     stdio: "inherit",
     ...options,
@@ -33,7 +30,7 @@ const run = (command, args, options = {}) => {
 };
 
 const readCommand = (command, args) => {
-  const result = spawnSync(commandName(command), args, {
+  const result = spawnSync(command, args, {
     cwd: repoRoot,
     encoding: "utf8",
   });
