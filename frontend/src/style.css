@@ -10,6 +10,84 @@
     var(--bg);
 }
 
+.workspace {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.project-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 240px;
+  min-width: 200px;
+  max-width: 360px;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-pane-alt) 70%, transparent);
+  overflow: hidden;
+}
+.project-sidebar-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.project-sidebar-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+.project-sidebar-root {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+  word-break: break-all;
+}
+.project-sidebar-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.project-sidebar-actions button {
+  flex: 1 1 auto;
+  font-size: 11px;
+  padding: 4px 8px;
+}
+.project-sidebar-empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+.project-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+.project-file {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--fg);
+  cursor: pointer;
+}
+.project-file:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.project-file.active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--fg);
+}
+
 .titlebar {
   display: flex;
   align-items: center;
@@ -1071,127 +1149,104 @@ html, body, #root {
   }
 }
 
+/* Off-screen print-only shadow copy — hidden on screen, visible only when printing. */
+.print-preview {
+  position: fixed;
+  left: -200vw;
+  top: 0;
+  width: 7.5in;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+}
+
 @media print {
   @page {
     margin: 0.75in;
   }
 
-  html,
-  body,
-  #root {
-    height: auto !important;
-    background: #fff !important;
-    color: #111827 !important;
-  }
-
+  /* Hide the whole interactive app shell. */
   .app {
-    display: block !important;
-    height: auto !important;
-    background: #fff !important;
-    color: #111827 !important;
-  }
-
-  .titlebar,
-  .pane-frame:not([data-pane-id="preview"]),
-  .pane-resizer,
-  .pane-frame[data-pane-id="preview"] .pane-header,
-  .preview-toolbar,
-  .preview-row-actions,
-  .preview-edit-ta,
-  .preview-drop-overlay,
-  .om-table-toolbar,
-  .om-img-handle,
-  .om-img-toolbar {
     display: none !important;
   }
 
-  .panes,
-  .pane-frame[data-pane-id="preview"],
-  .pane-frame[data-pane-id="preview"] > .pane,
-  .pane-body.preview {
+  /* Reveal and normalise the print shadow. */
+  .print-preview {
     display: block !important;
+    position: static !important;
+    width: auto !important;
     height: auto !important;
-    min-height: 0 !important;
     overflow: visible !important;
+    pointer-events: auto !important;
+    visibility: visible !important;
     background: #fff !important;
     color: #111827 !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-  }
-
-  .panes,
-  .pane-body.preview {
-    padding: 0 !important;
-  }
-
-  .pane-body.preview {
+    font-family: var(--sans);
     font-size: 11pt;
     line-height: 1.55;
   }
 
-  .preview-row,
-  .om-img-block,
-  .preview img,
-  .preview pre,
-  .preview table,
-  .preview blockquote {
+  .print-preview-row {
+    margin-bottom: 0.75rem;
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .preview-row {
-    margin-bottom: 0.75rem;
-  }
+  .print-preview h1,
+  .print-preview h2,
+  .print-preview h3 { line-height: 1.2; }
 
-  .preview-block,
-  .preview-block:hover,
-  .preview-block:focus,
-  .om-table-block,
-  .om-img-block,
-  .om-img-block:hover,
-  .om-img-block.selected {
-    margin: 0 !important;
-    padding: 0 !important;
-    background: transparent !important;
-    border-color: transparent !important;
-    box-shadow: none !important;
-    cursor: auto !important;
-  }
-
-  .om-table-editor input {
-    padding: 0 !important;
-    background: transparent !important;
-    color: #111827 !important;
-    border: 0 !important;
-    appearance: none;
-  }
-
-  .preview a {
+  .print-preview a {
     color: #0f4c81;
     text-decoration: underline;
   }
 
-  .preview pre {
-    overflow: visible !important;
+  .print-preview pre {
     white-space: pre-wrap;
     background: #f3f4f6 !important;
     border: 1px solid #e5e7eb;
+    padding: 8px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
-  .preview blockquote {
-    color: #4b5563 !important;
-    border-left-color: #9ca3af !important;
+  .print-preview code {
+    font-family: var(--mono);
   }
 
-  .preview th,
-  .preview td {
-    border-color: #d1d5db !important;
+  .print-preview blockquote {
+    border-left: 3px solid #9ca3af;
+    margin: 0;
+    padding-left: 12px;
+    color: #4b5563;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
-  .preview img,
-  .om-img-inner,
-  .om-img-inner img {
+  .print-preview table {
+    border-collapse: collapse;
+    width: 100%;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-preview th,
+  .print-preview td {
+    border: 1px solid #d1d5db;
+    padding: 4px 8px;
+  }
+
+  .print-preview img {
     max-width: 100% !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
+
+  .print-preview .om-img-wrap { margin: 4px 0; }
+  .print-preview .om-img-wrap.om-img-left   { text-align: left; }
+  .print-preview .om-img-wrap.om-img-center { text-align: center; }
+  .print-preview .om-img-wrap.om-img-right  { text-align: right; }
 }

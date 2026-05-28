@@ -4,6 +4,7 @@
 import {
   canRedo,
   canUndo,
+  createMarkdownFile,
   newDocument,
   openFile,
   redo,
@@ -21,7 +22,8 @@ export const registerShortcuts = () => {
     switch (e.key.toLowerCase()) {
       case "n":
         e.preventDefault();
-        newDocument();
+        if (e.shiftKey) void createMarkdownFile();
+        else newDocument();
         break;
       case "o":
         e.preventDefault();
