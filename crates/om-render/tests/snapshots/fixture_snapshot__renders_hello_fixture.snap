@@ -22,7 +22,7 @@ snapshot_kind: text
   - "<table><thead><tr><th>col a</th><th>col b</th></tr></thead><tbody>\n<tr><td>1</td><td>2</td></tr>\n</tbody></table>\n"
 - - Heading
   - "<h2>Task list</h2>\n"
-- - List
+- - TaskList
   - "<ul>\n<li><input disabled=\"\" type=\"checkbox\" checked=\"\"/>\nscaffold the workspace</li>\n<li><input disabled=\"\" type=\"checkbox\"/>\nwire up Tauri</li>\n<li><input disabled=\"\" type=\"checkbox\"/>\nadd CodeMirror</li>\n</ul>\n"
 - - ThematicBreak
   - "<hr />\n"

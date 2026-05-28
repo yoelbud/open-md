@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/om-core", "crates/om-render", "crates/om-app"]
+members = [
+    "crates/om-core",
+    "crates/om-render",
+    "crates/om-engine",
+    "crates/om-wasm",
+    "crates/om-app",
+]
 
 [workspace.package]
 version = "0.1.0-alpha.2"
@@ -21,6 +27,7 @@ anyhow = "=1.0.102"
 tauri = "=2.11.2"
 tauri-build = "=2.6.2"
 rfd = "=0.17.2"
+wasm-bindgen = "=0.2.122"
 
 # Dev-only deps shared across crates.
 insta = { version = "=1.41.1", features = ["yaml"] }

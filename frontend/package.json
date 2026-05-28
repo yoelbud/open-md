@@ -8,11 +8,12 @@
     "npm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "dev": "npm run build:wasm && vite",
+    "build": "npm run build:wasm && tsc -b && vite build",
     "preview": "vite preview",
-    "tauri:dev": "cd ../crates/om-app && tauri dev",
-    "tauri:build": "cd ../crates/om-app && tauri build",
+    "tauri:dev": "npm run build:wasm && cd ../crates/om-app && tauri dev",
+    "tauri:build": "npm run build:wasm && cd ../crates/om-app && tauri build",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

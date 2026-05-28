@@ -8,6 +8,7 @@
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use xxhash_rust::xxh3::xxh3_64;
 
+use crate::image::parse_image_block;
 use crate::ir::{Block, BlockKind, Document};
 
 const fn opts() -> Options {
@@ -71,6 +72,9 @@ pub fn segment(source: &str) -> Document {
             Event::End(_) => {
                 depth -= 1;
             }
+            Event::TaskListMarker(_) if current_kind == Some(BlockKind::List) => {
+                current_kind = Some(BlockKind::TaskList);
+            }
             Event::Rule if depth == 0 => {
                 push_block(
                     &mut blocks,
@@ -89,6 +93,11 @@ pub fn segment(source: &str) -> Document {
 
 fn push_block(out: &mut Vec<Block>, source: &str, start: usize, end: usize, kind: BlockKind) {
     let slice = &source[start..end];
+    let kind = if kind == BlockKind::Paragraph && parse_image_block(slice).is_some() {
+        BlockKind::Image
+    } else {
+        kind
+    };
     let hash = xxh3_64(slice.as_bytes());
     let id = format!("b{:016x}-{}", hash, out.len());
     out.push(Block {
@@ -160,5 +169,19 @@ mod tests {
         assert_eq!(before.blocks[0].hash, after.blocks[0].hash);
         assert_ne!(before.blocks[1].hash, after.blocks[1].hash);
         assert_eq!(before.blocks[2].hash, after.blocks[2].hash);
+    }
+
+    #[test]
+    fn task_list_emits_task_list_kind() {
+        let doc = segment("- [x] done\n- [ ] todo\n");
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::TaskList);
+    }
+
+    #[test]
+    fn image_only_paragraph_emits_image_kind() {
+        let doc = segment("![cat](https://x/y.png =300x200){.center}\n");
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::Image);
     }
 }

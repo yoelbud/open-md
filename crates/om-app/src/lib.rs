@@ -5,28 +5,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use om_core::{segment, BlockKind};
-use om_render::render_block;
+use om_engine::{render_document_payload, DocumentPayload};
 use serde::Serialize;
 
 const UNTITLED_PATH: &str = "(untitled).md";
 const MAX_PROJECT_FILES: usize = 10_000;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct RenderedBlock {
-    id: String,
-    kind: BlockKind,
-    src_range: (usize, usize),
-    hash: u64,
-    source: String,
-    html: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct DocumentPayload {
-    path: String,
-    blocks: Vec<RenderedBlock>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct LoadedMarkdownFile {
@@ -153,23 +136,6 @@ fn open_project_folder() -> Result<Option<ProjectPayload>, String> {
 #[allow(clippy::needless_pass_by_value)]
 fn load_project_file(path: String) -> Result<LoadedMarkdownFile, String> {
     read_markdown_file(path).map_err(|error| error.to_string())
-}
-
-fn render_document_payload(source: &str, path: String) -> DocumentPayload {
-    let doc = segment(source);
-    let blocks = doc
-        .blocks
-        .iter()
-        .map(|block| RenderedBlock {
-            id: block.id.clone(),
-            kind: block.kind,
-            src_range: block.src_range,
-            hash: block.hash,
-            source: block.source.clone(),
-            html: render_block(block),
-        })
-        .collect();
-    DocumentPayload { path, blocks }
 }
 
 fn markdown_file_dialog() -> rfd::FileDialog {
@@ -310,6 +276,8 @@ mod tests {
         path::Path,
         sync::atomic::{AtomicUsize, Ordering},
     };
+
+    use om_core::BlockKind;
 
     use super::*;
 
