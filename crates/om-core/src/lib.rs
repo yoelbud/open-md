@@ -14,6 +14,7 @@
 //! assert_eq!(doc.blocks[1].kind, BlockKind::Paragraph);
 //! ```
 
+pub mod image;
 pub mod ir;
 pub mod segment;
 

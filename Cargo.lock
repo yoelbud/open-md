@@ -2146,7 +2146,7 @@ name = "om-app"
 version = "0.1.0-alpha.2"
 dependencies = [
  "om-core",
- "om-render",
+ "om-engine",
  "rfd",
  "serde",
  "tauri",
@@ -2167,12 +2167,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "om-engine"
+version = "0.1.0-alpha.2"
+dependencies = [
+ "om-core",
+ "om-render",
+ "serde",
+]
+
+[[package]]
 name = "om-render"
 version = "0.1.0-alpha.2"
 dependencies = [
  "insta",
  "om-core",
  "pulldown-cmark",
+]
+
+[[package]]
+name = "om-wasm"
+version = "0.1.0-alpha.2"
+dependencies = [
+ "om-engine",
+ "serde_json",
+ "wasm-bindgen",
 ]
 
 [[package]]

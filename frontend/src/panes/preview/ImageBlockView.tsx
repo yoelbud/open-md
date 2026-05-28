@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { Block } from "../../ipc/types";
-import { parseImageBlock } from "../../ipc/stub";
+import { parseImageBlock } from "../../markdown/image";
 import {
   formatImageMarkdown,
   pickImageFromFile,

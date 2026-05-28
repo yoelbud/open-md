@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 om-core = { path = "../om-core" }
-om-render = { path = "../om-render" }
+om-engine = { path = "../om-engine" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tauri = { workspace = true }

@@ -15,6 +15,9 @@ node_modules/
 dist/
 .vite/
 coverage/
+frontend/src/wasm/*
+!frontend/src/wasm/om_wasm.d.ts
+!frontend/src/wasm/om_wasm.js
 
 # Tauri build artifacts
 crates/om-app/target/

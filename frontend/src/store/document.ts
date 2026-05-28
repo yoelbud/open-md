@@ -15,7 +15,7 @@ import {
   saveMarkdownFile as desktopSaveMarkdownFile,
 } from "../ipc/desktop";
 import type { LoadedMarkdownFile, ProjectFile, ProjectPayload } from "../ipc/desktop";
-import { parseDocument } from "../ipc/stub";
+import { parseDocument } from "../ipc/runtime";
 import { storeAsset } from "./assets";
 
 export const PANE_IDS = ["source", "ir", "preview"] as const;

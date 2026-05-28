@@ -70,6 +70,15 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install deps (locked)
         run: npm ci
+      - name: Install Rust toolchain for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: frontend-wasm-${{ matrix.os }}
+      - name: Install wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.122 --locked
       - name: Typecheck
         run: npm run typecheck
       - name: Unit tests

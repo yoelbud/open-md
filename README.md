@@ -17,20 +17,26 @@ session workspace for the full roadmap).
 ## Stack
 
 - **Tauri 2** shell, packaged as a small native desktop binary
-- **Rust** core (`crates/om-core`, `crates/om-render`, `crates/om-app`)
+- **Rust** core (`crates/om-core`, `crates/om-render`, `crates/om-engine`, `crates/om-wasm`, `crates/om-app`)
 - **Solid.js + Vite + TypeScript** frontend
 - **CodeMirror 6** for the source pane
 - **pulldown-cmark** + GFM for parsing
 
 ## Development
 
-Prerequisites: Rust (stable), Node 20+, npm.
+Prerequisites: Rust (stable), Node 20+, npm, and the `wasm-bindgen` CLI
+version matching the workspace dependency:
+
+```sh
+cargo install wasm-bindgen-cli --version 0.2.122 --locked
+```
 
 ```sh
 # install frontend deps
 cd frontend && npm install && cd ..
 
 # run a dev build of the frontend only (browser preview, no Tauri)
+# this compiles the shared Rust engine to WebAssembly first
 cd frontend && npm run dev
 
 # typecheck Rust workspace

@@ -32,6 +32,8 @@ pub enum BlockKind {
     Html,
     /// GFM task list (`- [ ]` / `- [x]`).
     TaskList,
+    /// Image-only paragraph with optional preview sizing/alignment metadata.
+    Image,
     /// Anything the segmenter did not recognise. Should never be emitted in
     /// normal operation; treated as opaque source text.
     Unknown,

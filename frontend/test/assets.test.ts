@@ -7,7 +7,7 @@ import {
   useDocument,
 } from "../src/store/document";
 import { __clearAssets, resolveAssetSrc, listAssets } from "../src/store/assets";
-import { parseDocument } from "../src/ipc/stub";
+import { parseDocument } from "../src/ipc/runtime";
 
 beforeEach(() => {
   __clearAssets();
