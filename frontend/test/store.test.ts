@@ -9,6 +9,11 @@ import {
   LAYOUT_PRESETS,
   movePane,
   newDocument,
+  applyProject,
+  loadMarkdownFile,
+  useProjectFiles,
+  useProjectRoot,
+  useActiveProjectFile,
   PANE_SIZE_MIN,
   redo,
   replaceBlockSource,
@@ -162,6 +167,24 @@ describe("document store", () => {
     newDocument();
     expect(useSource()()).toBe("");
     expect(usePath()()).toBe("(untitled).md");
+  });
+
+  it("tracks project files separately from the current document", () => {
+    applyProject({
+      root: "C:/project",
+      files: [
+        { path: "C:/project/a.md", relativePath: "a.md" },
+        { path: "C:/project/sub/b.md", relativePath: "sub/b.md" },
+      ],
+    });
+    expect(useProjectRoot()()).toBe("C:/project");
+    expect(useProjectFiles()()).toHaveLength(2);
+    expect(useActiveProjectFile()()).toBeNull();
+
+    loadMarkdownFile({ path: "C:/project/a.md", source: "# A" });
+    expect(useSource()()).toBe("# A");
+    expect(usePath()()).toBe("C:/project/a.md");
+    expect(useActiveProjectFile()()).toBe("C:/project/a.md");
   });
 
   it("keeps preview typography as IR metadata instead of markdown source", () => {

@@ -6,10 +6,6 @@ license.workspace = true
 repository.workspace = true
 description = "open-md desktop application (Tauri shell + IPC)"
 
-# The actual Tauri app will live here. M0 ships a small CLI that exercises the
-# core/render crates so the workspace builds end-to-end without requiring the
-# Tauri toolchain to be installed yet. Tauri wiring is added in M1.
-
 [[bin]]
 name = "om-app"
 path = "src/main.rs"
@@ -18,11 +14,12 @@ path = "src/main.rs"
 om-core = { path = "../om-core" }
 om-render = { path = "../om-render" }
 serde = { workspace = true }
-serde_json = { workspace = true }
-anyhow = { workspace = true }
+thiserror = { workspace = true }
+tauri = { workspace = true }
+rfd = { workspace = true }
 
-[dev-dependencies]
-insta = { workspace = true }
+[build-dependencies]
+tauri-build = { workspace = true }
 
 [lints]
 workspace = true

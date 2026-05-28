@@ -6,6 +6,15 @@ import type {
   PreviewDocumentMeta,
   PreviewFontFamily,
 } from "../ipc/types";
+import {
+  createMarkdownFile as desktopCreateMarkdownFile,
+  isDesktopRuntime,
+  loadProjectFile as desktopLoadProjectFile,
+  openMarkdownFile as desktopOpenMarkdownFile,
+  openProjectFolder as desktopOpenProjectFolder,
+  saveMarkdownFile as desktopSaveMarkdownFile,
+} from "../ipc/desktop";
+import type { LoadedMarkdownFile, ProjectFile, ProjectPayload } from "../ipc/desktop";
 import { parseDocument } from "../ipc/stub";
 import { storeAsset } from "./assets";
 
@@ -35,6 +44,7 @@ const DEFAULT_PANE_SIZES: Record<PaneId, number> = {
   ir: 1,
   preview: 1,
 };
+const UNTITLED_PATH = "(untitled).md";
 
 export const PANE_SIZE_MIN = 0.35;
 const PANE_SIZE_MAX = 4;
@@ -112,6 +122,12 @@ const pushHistory = (src: string, path: string) => {
   historyPos = history.length - 1;
 };
 
+const resetHistory = (src: string, path: string) => {
+  history.splice(0);
+  history.push({ src, path });
+  historyPos = 0;
+};
+
 export const canUndo = () => historyPos > 0;
 export const canRedo = () => historyPos < history.length - 1;
 
@@ -141,8 +157,11 @@ fn main() {
 `;
 
 const [source, setSourceRaw] = createSignal(SAMPLE);
-const [path, setPathRaw] = createSignal("(untitled).md");
+const [path, setPathRaw] = createSignal(UNTITLED_PATH);
 const [editingPoint, setEditingPointRaw] = createSignal<EditingPoint | null>(null);
+const [projectRoot, setProjectRootRaw] = createSignal<string | null>(null);
+const [projectFiles, setProjectFilesRaw] = createSignal<ProjectFile[]>([]);
+const [activeProjectFile, setActiveProjectFileRaw] = createSignal<string | null>(null);
 
 // Preview-only document presentation. This deliberately lives outside the
 // Markdown source/history so changing reading/editing ergonomics never dirties
@@ -184,7 +203,23 @@ const setSource = (s: string) => {
   setSourceRaw(s);
   pushHistory(s, path());
 };
-const setPath = (p: string) => setPathRaw(p);
+const setPath = (p: string) => {
+  setPathRaw(p);
+  if (historyPos >= 0) history[historyPos] = { ...history[historyPos]!, path: p };
+};
+
+const replaceDocument = (
+  file: LoadedMarkdownFile,
+  activeFilePath: string | null,
+) => {
+  batch(() => {
+    setPathRaw(file.path);
+    setSourceRaw(file.source);
+    setEditingPointRaw(null);
+    setActiveProjectFileRaw(activeFilePath);
+  });
+  resetHistory(file.source, file.path);
+};
 
 const clampSourceOffset = (offset: number) => {
   if (!Number.isFinite(offset)) return 0;
@@ -192,7 +227,7 @@ const clampSourceOffset = (offset: number) => {
 };
 
 // Seed history with the initial document.
-pushHistory(SAMPLE, "(untitled).md");
+resetHistory(SAMPLE, UNTITLED_PATH);
 
 export const undo = () => {
   if (!canUndo()) return;
@@ -212,15 +247,81 @@ export const redo = () => {
 };
 
 export const newDocument = () => {
-  batch(() => { setPath("(untitled).md"); setSource(""); });
+  replaceDocument({ path: UNTITLED_PATH, source: "" }, null);
 };
 
 export const useSource = () => source;
 export const useSetSource = () => setSource;
 export const usePath = () => path;
 export const useSetPath = () => setPath;
+export const useProjectRoot = () => projectRoot;
+export const useProjectFiles = () => projectFiles;
+export const useActiveProjectFile = () => activeProjectFile;
 export const usePreviewSettings = () => previewSettings;
 export const useEditingPoint = () => editingPoint;
+
+const normalizePathForCompare = (value: string) =>
+  value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+
+const normalizeRelativePath = (value: string) => value.replace(/\\/g, "/");
+
+export const relativePathInProject = (
+  root: string,
+  filePath: string,
+): string | null => {
+  const normalizedRoot = normalizePathForCompare(root);
+  const normalizedPath = filePath.replace(/\\/g, "/");
+  const comparablePath = normalizePathForCompare(filePath);
+  const prefix = `${normalizedRoot}/`;
+  if (!comparablePath.startsWith(prefix)) return null;
+  return normalizedPath.slice(normalizedRoot.length + 1);
+};
+
+const sameFilePath = (a: string, b: string) =>
+  normalizePathForCompare(a) === normalizePathForCompare(b);
+
+const sortProjectFiles = (files: ProjectFile[]) =>
+  [...files].sort((a, b) =>
+    a.relativePath.localeCompare(b.relativePath, undefined, { sensitivity: "base" }),
+  );
+
+const normalizeProjectFile = (file: ProjectFile): ProjectFile => ({
+  path: file.path,
+  relativePath: normalizeRelativePath(file.relativePath),
+});
+
+export const applyProject = (project: ProjectPayload) => {
+  batch(() => {
+    setProjectRootRaw(project.root);
+    setProjectFilesRaw(sortProjectFiles(project.files.map(normalizeProjectFile)));
+    setActiveProjectFileRaw(null);
+  });
+};
+
+const upsertProjectFile = (filePath: string) => {
+  const root = projectRoot();
+  if (!root) return;
+  const relativePath = relativePathInProject(root, filePath);
+  if (!relativePath) return;
+  setProjectFilesRaw((files) => {
+    const next = files.filter((file) => !sameFilePath(file.path, filePath));
+    next.push({ path: filePath, relativePath: normalizeRelativePath(relativePath) });
+    return sortProjectFiles(next);
+  });
+};
+
+const activePathForLoadedFile = (filePath: string) => {
+  const root = projectRoot();
+  return root && relativePathInProject(root, filePath) ? filePath : null;
+};
+
+export const loadMarkdownFile = (
+  file: LoadedMarkdownFile,
+  activeFilePath = activePathForLoadedFile(file.path),
+) => {
+  replaceDocument(file, activeFilePath);
+  if (activeFilePath) upsertProjectFile(file.path);
+};
 
 export const setEditingPoint = (point: EditingPoint) => {
   setEditingPointRaw({
@@ -579,26 +680,86 @@ export const insertBlockAtStart = (snippet: string) => {
   setSource(snippet + pad + current);
 };
 
+type SaveFilePickerOptions = {
+  suggestedName?: string;
+  types?: Array<{
+    description: string;
+    accept: Record<string, string[]>;
+  }>;
+};
+
+type FileSystemWritableFileStream = {
+  write(data: BlobPart | string): Promise<void>;
+  close(): Promise<void>;
+};
+
+type FileSystemFileHandle = {
+  name: string;
+  createWritable(): Promise<FileSystemWritableFileStream>;
+};
+
+type WindowWithSaveFilePicker = Window & {
+  showSaveFilePicker?: (
+    options: SaveFilePickerOptions,
+  ) => Promise<FileSystemFileHandle>;
+};
+
+const isAbortError = (error: unknown) =>
+  error instanceof DOMException && error.name === "AbortError";
+
+const errorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
+const notifyUnavailable = (message: string) => {
+  if (typeof window.alert === "function") {
+    window.alert(message);
+  } else {
+    console.warn(message);
+  }
+};
+
+const reportFileError = (context: string, error: unknown) => {
+  const message = `${context}: ${errorMessage(error)}`;
+  console.error(message);
+  notifyUnavailable(message);
+};
+
 export const saveFile = async () => {
   const src = source();
   const p = path();
-  // In M1 this will call Tauri's fs.writeTextFile. For now use the browser
-  // File System Access API (Chrome/Edge) with a fallback to anchor download.
-  if ("showSaveFilePicker" in window) {
+
+  if (isDesktopRuntime()) {
     try {
-      const handle = await (window as any).showSaveFilePicker({
+      const saved = await desktopSaveMarkdownFile(p === UNTITLED_PATH ? null : p, src);
+      if (!saved) return;
+      setPath(saved.path);
+      upsertProjectFile(saved.path);
+      setActiveProjectFileRaw(activePathForLoadedFile(saved.path));
+    } catch (error) {
+      reportFileError("Save failed", error);
+    }
+    return;
+  }
+
+  const savePicker = (window as WindowWithSaveFilePicker).showSaveFilePicker;
+  if (savePicker) {
+    try {
+      const handle = await savePicker({
         suggestedName: p,
         types: [{ description: "Markdown", accept: { "text/markdown": [".md", ".markdown"] } }],
       });
       const writable = await handle.createWritable();
       await writable.write(src);
       await writable.close();
-      setPath(handle.name as string);
+      setPath(handle.name);
       return;
-    } catch {
-      /* user cancelled or API unavailable, fall through */
+    } catch (error) {
+      if (isAbortError(error)) return;
+      reportFileError("Save failed", error);
+      return;
     }
   }
+
   // Fallback: trigger a download.
   const blob = new Blob([src], { type: "text/markdown" });
   const url = URL.createObjectURL(blob);
@@ -608,15 +769,71 @@ export const saveFile = async () => {
 };
 
 export const openFile = async () => {
+  if (isDesktopRuntime()) {
+    try {
+      const loaded = await desktopOpenMarkdownFile();
+      if (loaded) loadMarkdownFile(loaded);
+    } catch (error) {
+      reportFileError("Open failed", error);
+    }
+    return;
+  }
+
   const input = document.createElement("input");
   input.type = "file";
   input.accept = ".md,.markdown,text/markdown,text/plain";
   input.onchange = async () => {
     const file = input.files?.[0];
     if (!file) return;
-    const text = await file.text();
-    setPath(file.name);
-    setSource(text);
+    try {
+      const text = await file.text();
+      loadMarkdownFile({ path: file.name, source: text });
+    } catch (error) {
+      reportFileError("Open failed", error);
+    }
   };
   input.click();
+};
+
+export const createMarkdownFile = async () => {
+  if (isDesktopRuntime()) {
+    try {
+      const loaded = await desktopCreateMarkdownFile(projectRoot());
+      if (loaded) loadMarkdownFile(loaded);
+    } catch (error) {
+      reportFileError("Create file failed", error);
+    }
+    return;
+  }
+
+  newDocument();
+  await saveFile();
+};
+
+export const openProject = async () => {
+  if (!isDesktopRuntime()) {
+    notifyUnavailable("Open Folder is available in the desktop app.");
+    return;
+  }
+
+  try {
+    const project = await desktopOpenProjectFolder();
+    if (project) applyProject(project);
+  } catch (error) {
+    reportFileError("Open folder failed", error);
+  }
+};
+
+export const openProjectFile = async (file: ProjectFile) => {
+  if (!isDesktopRuntime()) {
+    notifyUnavailable("Project files are available in the desktop app.");
+    return;
+  }
+
+  try {
+    const loaded = await desktopLoadProjectFile(file.path);
+    if (loaded) loadMarkdownFile(loaded, file.path);
+  } catch (error) {
+    reportFileError("Open project file failed", error);
+  }
 };

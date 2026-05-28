@@ -18,7 +18,7 @@
 #![deny(missing_docs)]
 
 use om_core::{Block, Document};
-use pulldown_cmark::{html, Options, Parser};
+use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
 const fn opts() -> Options {
     Options::ENABLE_TABLES
@@ -35,10 +35,51 @@ const fn opts() -> Options {
 /// defined elsewhere) are intentionally not resolved here.
 #[must_use]
 pub fn render_block(block: &Block) -> String {
+    if let Some(diagram) = mermaid_diagram_source(&block.source) {
+        return render_mermaid_diagram(&diagram);
+    }
+
     let parser = Parser::new_ext(&block.source, opts());
     let mut out = String::with_capacity(block.source.len() + 32);
     html::push_html(&mut out, parser);
     out
+}
+
+fn mermaid_diagram_source(source: &str) -> Option<String> {
+    let mut parser = Parser::new_ext(source, opts());
+    match parser.next()? {
+        Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
+            let language = info.split_whitespace().next()?;
+            if !language.eq_ignore_ascii_case("mermaid") {
+                return None;
+            }
+        }
+        _ => return None,
+    }
+
+    let mut diagram = String::new();
+    for event in parser {
+        match event {
+            Event::Text(text) => diagram.push_str(&text),
+            Event::End(TagEnd::CodeBlock) => return Some(diagram),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn render_mermaid_diagram(source: &str) -> String {
+    format!(
+        "<pre class=\"mermaid\" data-om-mermaid>{}</pre>\n",
+        escape_html(source)
+    )
+}
+
+fn escape_html(source: &str) -> String {
+    source
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// Render every block in `doc` and concatenate the resulting HTML in order.
@@ -76,6 +117,32 @@ mod tests {
         let doc = segment("```\n<script>\n```\n");
         let html = render_block(&doc.blocks[0]);
         assert!(html.contains("&lt;script&gt;"));
+    }
+
+    #[test]
+    fn renders_mermaid_fence_as_diagram_container() {
+        let doc = segment("```mermaid\ngraph TD\n  A --> B\n```\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("class=\"mermaid\""));
+        assert!(html.contains("data-om-mermaid"));
+        assert!(html.contains("graph TD"));
+        assert!(!html.contains("<code>"));
+    }
+
+    #[test]
+    fn renders_tilde_mermaid_fence_as_diagram_container() {
+        let doc = segment("~~~mermaid\ngraph TD\n  A --> B\n~~~\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("class=\"mermaid\""));
+        assert!(html.contains("graph TD"));
+    }
+
+    #[test]
+    fn escapes_mermaid_diagram_source() {
+        let doc = segment("```mermaid\ngraph TD\n  A[<script>] --> B\n```\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(!html.contains("<script>"));
     }
 
     #[test]

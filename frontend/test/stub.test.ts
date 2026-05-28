@@ -119,6 +119,29 @@ describe("parseDocument", () => {
     expect(html).not.toContain("<script>");
   });
 
+  it("renders mermaid code fences as diagram containers", () => {
+    const block = parseDocument("```mermaid\ngraph TD\n  A --> B\n```\n").blocks[0]!;
+    expect(block.kind).toBe("code");
+    expect(block.html).toContain('class="mermaid"');
+    expect(block.html).toContain("data-om-mermaid");
+    expect(block.html).toContain("graph TD");
+    expect(block.html).not.toContain("<code>");
+  });
+
+  it("supports tilde mermaid fences", () => {
+    const block = parseDocument("~~~mermaid\ngraph TD\n  A --> B\n~~~\n").blocks[0]!;
+    expect(block.kind).toBe("code");
+    expect(block.html).toContain('class="mermaid"');
+    expect(block.html).toContain("graph TD");
+  });
+
+  it("escapes HTML inside mermaid diagram containers", () => {
+    const html = parseDocument("```mermaid\ngraph TD\n  A[<script>] --> B\n```\n")
+      .blocks[0]!.html;
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).not.toContain("<script>");
+  });
+
   it("handles CRLF line endings", () => {
     const docLf = parseDocument("# H\n\nbody\n");
     const docCrlf = parseDocument("# H\r\n\r\nbody\r\n");
