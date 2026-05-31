@@ -723,6 +723,10 @@ export const toggleOutline = () => setOutlineVisible((v) => !v);
 export const toggleStatusBar = () => setStatusBarVisible((v) => !v);
 export const toggleComments = () => setCommentsVisibleRaw((v) => !v);
 
+const [proofreadVisible, setProofreadVisible] = createSignal(false);
+export const useProofreadVisible = () => proofreadVisible;
+export const toggleProofread = () => setProofreadVisible((v) => !v);
+
 // --- scroll sync -----------------------------------------------------------
 
 const [scrollSync, setScrollSync] = createSignal(true);

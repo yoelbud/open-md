@@ -8,6 +8,7 @@ import { MarkToolbar } from "./panes/MarkToolbar";
 import { ProjectSidebar } from "./panes/project/ProjectSidebar";
 import { OutlinePanel } from "./panes/outline/OutlinePanel";
 import { CommentsPanel } from "./panes/comments/CommentsPanel";
+import { ProofreadPanel } from "./panes/proofread/ProofreadPanel";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette } from "./components/CommandPalette";
 import { RecoveryBanner } from "./components/RecoveryBanner";
@@ -28,6 +29,7 @@ import {
   useOutlineVisible,
   usePaneSizes,
   usePaneVisible,
+  useProofreadVisible,
   useSource,
   useStatusBarVisible,
   useVisiblePanes,
@@ -68,6 +70,7 @@ export const App = () => {
   const activeLayout = useActiveLayout();
   const outlineVisible = useOutlineVisible();
   const commentsVisible = useCommentsVisible();
+  const proofreadVisible = useProofreadVisible();
   const statusBarVisible = useStatusBarVisible();
   const menus = buildMenus({ onOpenCustomCss: () => setCustomCssOpen(true) });
 
@@ -398,6 +401,9 @@ export const App = () => {
         </div>
         <Show when={commentsVisible()}>
           <CommentsPanel />
+        </Show>
+        <Show when={proofreadVisible()}>
+          <ProofreadPanel />
         </Show>
       </div>
       <Show when={statusBarVisible()}>

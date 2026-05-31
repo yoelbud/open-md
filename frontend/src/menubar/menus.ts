@@ -25,6 +25,7 @@ import {
   toggleFocusMode,
   toggleOutline,
   togglePane,
+  toggleProofread,
   toggleScrollSync,
   toggleStatusBar,
   toggleTypewriterMode,
@@ -35,6 +36,7 @@ import {
   useFocusMode,
   useOutlineVisible,
   usePaneVisible,
+  useProofreadVisible,
   useScrollSync,
   useStatusBarVisible,
   useTypewriterMode,
@@ -54,6 +56,7 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
   const activeLayout = useActiveLayout();
   const outlineVis = useOutlineVisible();
   const commentsVis = useCommentsVisible();
+  const proofreadVis = useProofreadVisible();
   const statusBarVis = useStatusBarVisible();
   const typewriter = useTypewriterMode();
   const focus = useFocusMode();
@@ -167,6 +170,13 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
           shortcut: "Ctrl+Shift+M",
           checked: () => commentsVis(),
           action: toggleComments,
+        },
+        {
+          kind: "check",
+          label: "Proofreading panel",
+          shortcut: "Ctrl+Shift+P",
+          checked: () => proofreadVis(),
+          action: toggleProofread,
         },
         {
           kind: "check",
