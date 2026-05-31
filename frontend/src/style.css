@@ -2399,3 +2399,81 @@ html, body, #root {
   font-size: 0.85em;
   font-style: italic;
 }
+
+/* --- Paged preview mode --------------------------------------------------- */
+
+.preview.om-paged-preview {
+  background: #e8e8ec;
+  padding: 2rem 1rem;
+}
+[data-theme="dark"] .preview.om-paged-preview,
+:root .preview.om-paged-preview {
+  background: color-mix(in srgb, var(--bg-pane) 60%, #23232a);
+}
+
+.om-paged-preview .preview-document {
+  max-width: none;
+}
+
+.om-paged-preview .om-page-frame {
+  width: 8.5in;
+  min-height: 11in;
+  padding: 1in;
+  margin: 0 auto 1.5rem auto;
+  background: #fff;
+  color: #1a1a2e;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06);
+  border-radius: 2px;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.om-paged-preview .om-page-frame.om-page-a4 {
+  width: 210mm;
+  min-height: 297mm;
+}
+.om-paged-preview .om-page-frame.om-page-landscape {
+  width: 11in;
+  min-height: 8.5in;
+}
+.om-paged-preview .om-page-frame.om-page-a4.om-page-landscape {
+  width: 297mm;
+  min-height: 210mm;
+}
+
+.om-paged-preview .om-page-footer {
+  position: absolute;
+  bottom: 0.4in;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 9pt;
+  color: #888;
+  pointer-events: none;
+}
+
+.om-paged-preview .om-page-break-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin: 1.5rem auto;
+  max-width: 8.5in;
+  color: #999;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.om-paged-preview .om-page-break-divider::before,
+.om-paged-preview .om-page-break-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    #bbb 0,
+    #bbb 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}

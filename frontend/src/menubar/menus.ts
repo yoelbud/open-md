@@ -44,8 +44,10 @@ import { exportPreviewPdf } from "../ipc/previewPdf";
 import { exportHtmlAction, copyAsHtmlAction } from "../export/htmlExportAction";
 import { exportDocxAction } from "../export/docxExportAction";
 import { exportSlidesAction } from "../export/slidesExportAction";
+import { exportPagedHtmlAction } from "../export/pagedExportAction";
 import { THEME_PRESETS, setTheme, useThemeId } from "../store/theme";
 import { toggleDiffMode, useDiffMode } from "../store/diff";
+import { togglePagedMode, usePagedMode } from "../store/pagination";
 
 export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] => {
   const vis = usePaneVisible();
@@ -60,6 +62,7 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
   const spellcheckOn = useSpellcheck();
   const currentTheme = useThemeId();
   const diffModeOn = useDiffMode();
+  const pagedModeOn = usePagedMode();
 
   const insertItems = BLOCK_TEMPLATES.map((t) => ({
     kind: "action" as const,
@@ -84,6 +87,7 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
         { kind: "action", label: "Export → HTML…",           action: () => void exportHtmlAction() },
         { kind: "action", label: "Export → Word (.docx)…",    action: () => void exportDocxAction() },
         { kind: "action", label: "Export → Slides…",         action: () => void exportSlidesAction() },
+        { kind: "action", label: "Export → Paged HTML (Print)…", action: () => void exportPagedHtmlAction() },
         { kind: "action", label: "Export → PDF…", shortcut: "Ctrl+P", action: exportPreviewPdf },
         { kind: "sep" },
         { kind: "action", label: "Exit",      danger: true,       action: () => window.close() },
@@ -210,6 +214,13 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
           shortcut: "Alt+G",
           checked: () => diffModeOn(),
           action: toggleDiffMode,
+        },
+        {
+          kind: "check",
+          label: "Paged layout",
+          shortcut: "Alt+P",
+          checked: () => pagedModeOn(),
+          action: togglePagedMode,
         },
         { kind: "sep" },
         {

@@ -47,6 +47,8 @@ import {
   diffStatusForBlock,
 } from "../../store/diff";
 import { addComment, useCommentsForBlock } from "../../store/comments";
+import { usePagedMode, usePageConfig } from "../../store/pagination";
+import { isPageBreakBlock, pageFrameClasses } from "../../export/pagination";
 import "katex/dist/katex.min.css";
 
 const FONT_OPTIONS: { id: PreviewFontFamily; label: string }[] = [
@@ -594,6 +596,41 @@ const DiffSummaryBanner = () => {
   );
 };
 
+// ── paged layout: group blocks into page frames at explicit page breaks ──────
+const PagedDocument = (props: { blocks: Block[] }) => {
+  const pages = () => {
+    const result: { block: Block; index: number }[][] = [];
+    let current: { block: Block; index: number }[] = [];
+    props.blocks.forEach((block, index) => {
+      if (isPageBreakBlock(block.source)) {
+        if (current.length) result.push(current);
+        current = [];
+        return;
+      }
+      current.push({ block, index });
+    });
+    if (current.length) result.push(current);
+    return result.length ? result : [[]];
+  };
+
+  return (
+    <div class="preview-document">
+      <Index each={pages()}>
+        {(page, pageIndex) => (
+          <div class={pageFrameClasses(usePageConfig()())}>
+            <Index each={page()}>
+              {(item) => <PreviewBlockRow block={item().block} index={item().index} />}
+            </Index>
+            <div class="om-page-footer">
+              Page {pageIndex + 1} of {pages().length}
+            </div>
+          </div>
+        )}
+      </Index>
+    </div>
+  );
+};
+
 // ── pane root ────────────────────────────────────────────────────────────────
 type PaneProps = {
   layoutControls?: JSX.Element;
@@ -788,7 +825,7 @@ export const PreviewPane = (props: PaneProps) => {
       <div
         ref={previewBodyRef}
         class="pane-body preview"
-        classList={{ "drop-target": dragOver() }}
+        classList={{ "drop-target": dragOver(), "om-paged-preview": usePagedMode()() }}
         style={previewStyle()}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -797,35 +834,42 @@ export const PreviewPane = (props: PaneProps) => {
         onClick={handlePreviewClick}
         tabIndex={0}
       >
-        <Show when={useDiffMode()()}>
+        <Show when={useDiffMode()() && !usePagedMode()()}>
           <DiffSummaryBanner />
         </Show>
-        <div class="preview-document">
-          <Show
-            when={useDiffMode()()}
-            fallback={
-              <Index each={doc().blocks}>
-                {(block, index) => <PreviewBlockRow block={block()} index={index} />}
-              </Index>
-            }
-          >
-            <Index each={useDiffEntries()}>
-              {(entry) => {
-                const e = entry();
-                if (e.status === "removed" && e.oldBlock) {
-                  return <PreviewGhostRow block={e.oldBlock} />;
+        <Show
+          when={usePagedMode()()}
+          fallback={
+            <div class="preview-document">
+              <Show
+                when={useDiffMode()()}
+                fallback={
+                  <Index each={doc().blocks}>
+                    {(block, index) => <PreviewBlockRow block={block()} index={index} />}
+                  </Index>
                 }
-                const id = e.newBlock?.id;
-                const live = doc().blocks.findIndex((b) => b.id === id);
-                return (
-                  <Show when={live >= 0}>
-                    <PreviewBlockRow block={doc().blocks[live]!} index={live} />
-                  </Show>
-                );
-              }}
-            </Index>
-          </Show>
-        </div>
+              >
+                <Index each={useDiffEntries()}>
+                  {(entry) => {
+                    const e = entry();
+                    if (e.status === "removed" && e.oldBlock) {
+                      return <PreviewGhostRow block={e.oldBlock} />;
+                    }
+                    const id = e.newBlock?.id;
+                    const live = doc().blocks.findIndex((b) => b.id === id);
+                    return (
+                      <Show when={live >= 0}>
+                        <PreviewBlockRow block={doc().blocks[live]!} index={live} />
+                      </Show>
+                    );
+                  }}
+                </Index>
+              </Show>
+            </div>
+          }
+        >
+          <PagedDocument blocks={doc().blocks} />
+        </Show>
         <Show when={dragOver()}>
           <div class="preview-drop-overlay">Drop image to insert</div>
         </Show>
