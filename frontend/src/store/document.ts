@@ -1232,6 +1232,23 @@ export const exportMarkdown = async () => {
   downloadFile(suggested, body, "text/markdown");
 };
 
+export const exportHtml = async (htmlContent: string) => {
+  const suggested = `${baseName(path())}.html`;
+  try {
+    const wrote = await writeViaPicker(
+      suggested,
+      "HTML Document",
+      { "text/html": [".html", ".htm"] },
+      htmlContent,
+    );
+    if (wrote) return;
+  } catch (error) {
+    reportFileError("Export HTML failed", error);
+    return;
+  }
+  downloadFile(suggested, htmlContent, "text/html");
+};
+
 export const openFile = async () => {
   if (isDesktopRuntime()) {
     try {

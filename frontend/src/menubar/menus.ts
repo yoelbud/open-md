@@ -38,6 +38,7 @@ import {
   useTypewriterMode,
 } from "../store/document";
 import { exportPreviewPdf } from "../ipc/previewPdf";
+import { exportHtmlAction, copyAsHtmlAction } from "../export/htmlExportAction";
 import { THEME_PRESETS, setTheme, useThemeId } from "../store/theme";
 
 export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] => {
@@ -71,6 +72,7 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
         { kind: "action", label: "Save Markdown…",       action: () => void saveFile() },
         { kind: "sep" },
         { kind: "action", label: "Export → Markdown…",      action: () => void exportMarkdown() },
+        { kind: "action", label: "Export → HTML…",           action: () => void exportHtmlAction() },
         { kind: "action", label: "Export → PDF…", shortcut: "Ctrl+P", action: exportPreviewPdf },
         { kind: "sep" },
         { kind: "action", label: "Exit",      danger: true,       action: () => window.close() },
@@ -103,6 +105,12 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
           label: "Find & Replace…",
           shortcut: "Ctrl+H",
           action: openFindReplace,
+        },
+        { kind: "sep" },
+        {
+          kind: "action",
+          label: "Copy as HTML",
+          action: () => void copyAsHtmlAction(),
         },
       ],
     },
