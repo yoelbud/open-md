@@ -2138,3 +2138,36 @@ html, body, #root {
   text-decoration: line-through;
   opacity: 0.7;
 }
+
+/* ── Block references & transclusion ──────────────────────────────────────── */
+.om-transclusion {
+  margin: 0.4rem 0;
+  padding: 0.4rem 0.75rem;
+  border-left: 3px solid var(--accent, #3b82f6);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 6%, transparent);
+  border-radius: 4px;
+}
+.om-ref-link {
+  color: var(--accent, #3b82f6);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  cursor: pointer;
+}
+.om-ref-link:hover {
+  text-decoration-style: solid;
+}
+.om-ref-missing {
+  color: var(--red, #ef4444);
+  border: 1px dashed var(--red, #ef4444);
+  padding: 0 0.25em;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+.om-ref-cycle {
+  color: var(--amber, #f59e0b);
+  border: 1px dashed var(--amber, #f59e0b);
+  padding: 0 0.25em;
+  border-radius: 3px;
+  font-size: 0.85em;
+  font-style: italic;
+}

@@ -29,6 +29,12 @@ import { extractHeadings, isTocToken, renderTocHtml } from "../../store/outline"
 import { splitInlineMath } from "../../store/mathInline";
 import { setupFootnoteTooltip } from "./footnotes";
 import {
+  buildAnchorMap,
+  parseAnchor,
+  replaceRefTokens,
+  stripAnchorFromHtml,
+} from "./blockRefs";
+import {
   useDiffMode,
   useDiffEntries,
   useDiffSummary,
@@ -260,6 +266,24 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
       html = renderTocHtml(headings);
     }
     if (!viewRef || editing()) return;
+
+    // ── Block references: strip anchor markers & resolve transclusions ──
+    const anchor = parseAnchor(props.block.source);
+    if (anchor) {
+      html = stripAnchorFromHtml(html);
+    }
+
+    // Resolve embed/link tokens using the document-wide anchor map.
+    const blocks = doc().blocks;
+    const anchorMap = buildAnchorMap(blocks);
+    const resolver = (blockId: string): string | null => {
+      const target = blocks.find((b) => b.id === blockId);
+      if (!target) return null;
+      const targetHtml = previewMode() === "markdown" ? target.plain_html : target.html;
+      return stripAnchorFromHtml(targetHtml);
+    };
+    html = replaceRefTokens(html, anchorMap, resolver);
+
     renderVersion += 1;
     viewRef.dataset.mermaidVersion = String(renderVersion);
     viewRef.innerHTML = html;
@@ -417,10 +441,15 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
     );
   }
 
+  // Derive anchor name for this block (used for container attributes).
+  const anchorName = () => parseAnchor(props.block.source);
+
   return (
     <div
       class="preview-row"
       data-block-id={props.block.id}
+      data-om-anchor={anchorName() ?? undefined}
+      id={anchorName() ? `ref-${anchorName()}` : undefined}
       classList={{ "editing-point": isEditingPoint(), ...diffClasses() }}
       onFocusIn={() => markEditingPoint()}
       onFocusOut={(e) => {
