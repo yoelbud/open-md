@@ -1245,6 +1245,25 @@ html, body, #root {
   border-radius: 4px;
 }
 
+/* Inline text marks: sub, sup, ins, mark (Markdown extensions) */
+.preview mark,
+.print-preview mark {
+  background: color-mix(in srgb, var(--om-yellow) 38%, transparent);
+  color: inherit;
+  padding: 0.05em 0.18em;
+  border-radius: 4px;
+}
+.preview ins,
+.print-preview ins {
+  text-decoration: underline;
+}
+.preview sub,
+.preview sup,
+.print-preview sub,
+.print-preview sup {
+  line-height: 0;
+}
+
 .om-fg-red { color: var(--om-red); }
 .om-fg-orange { color: var(--om-orange); }
 .om-fg-amber { color: var(--om-amber); }

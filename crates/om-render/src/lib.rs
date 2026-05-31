@@ -176,7 +176,176 @@ fn render_markdown_fragment(source: &str, skip_inline: bool) -> String {
     let parser = Parser::new_ext(&transformed, opts());
     let mut out = String::with_capacity(source.len() + 32);
     html::push_html(&mut out, parser);
+    if !skip_inline {
+        out = apply_inline_marks(&out);
+    }
     out
+}
+
+/// Apply inline text marks (sub, sup, ins, mark) to already-rendered HTML,
+/// carefully skipping content inside `<code>`, `<pre>`, and HTML tag attributes.
+///
+/// Supported syntax (delimiters must hug non-space content):
+/// - `~text~`   → `<sub>text</sub>`  (single tilde, not part of `~~`)
+/// - `^text^`   → `<sup>text</sup>`
+/// - `++text++` → `<ins>text</ins>`
+/// - `==text==` → `<mark>text</mark>`
+fn apply_inline_marks(html: &str) -> String {
+    // Split the HTML into segments: protected (inside <code>, <pre>, or HTML
+    // tags) and transformable (plain text between tags).
+    let mut result = String::with_capacity(html.len());
+    let mut i = 0;
+    let bytes = html.as_bytes();
+
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
+            // Check for <code> or <pre> opening tags (case insensitive).
+            if starts_with_ci(html, i, "<code") || starts_with_ci(html, i, "<pre") {
+                let is_pre = starts_with_ci(html, i, "<pre");
+                let close_tag = if is_pre { "</pre>" } else { "</code>" };
+                // Find the matching close tag.
+                if let Some(end) = find_close_tag(html, i, close_tag) {
+                    result.push_str(&html[i..end]);
+                    i = end;
+                    continue;
+                }
+            }
+            // Any other HTML tag — copy verbatim until '>'.
+            if let Some(end) = html[i..].find('>') {
+                let tag_end = i + end + 1;
+                result.push_str(&html[i..tag_end]);
+                i = tag_end;
+            } else {
+                result.push_str(&html[i..]);
+                break;
+            }
+            continue;
+        }
+
+        // Find the next '<' or end.
+        let next_tag = html[i..].find('<').map_or(html.len(), |p| i + p);
+        let segment = &html[i..next_tag];
+        result.push_str(&transform_text_marks(segment));
+        i = next_tag;
+    }
+
+    result
+}
+
+/// Check if `html[pos..]` starts with `prefix` (ASCII case-insensitive).
+fn starts_with_ci(html: &str, pos: usize, prefix: &str) -> bool {
+    let rest = &html[pos..];
+    if rest.len() < prefix.len() {
+        return false;
+    }
+    rest[..prefix.len()].eq_ignore_ascii_case(prefix)
+}
+
+/// Find the byte offset (from start of `html`) just past the closing tag.
+fn find_close_tag(html: &str, start: usize, close_tag: &str) -> Option<usize> {
+    let haystack = &html[start..];
+    // Skip past the opening tag first.
+    let after_open = haystack.find('>')? + 1;
+    let rest = &haystack[after_open..];
+    // Case-insensitive search for close tag.
+    let lower = rest.to_ascii_lowercase();
+    let pos = lower.find(close_tag)?;
+    Some(start + after_open + pos + close_tag.len())
+}
+
+/// Apply inline mark substitutions on a text segment (no HTML tags present).
+fn transform_text_marks(text: &str) -> String {
+    // Order matters: longest delimiters first to avoid partial matches.
+    // `==text==` → <mark>, `++text++` → <ins>, then single-char `^`.
+    // Note: `~~` is already handled by pulldown_cmark as strikethrough (<del>).
+    // Note: `~` (subscript) is handled in the pre-processor (`transform_inline`)
+    // because pulldown_cmark would otherwise consume it as strikethrough.
+    let mut s = text.to_string();
+    // ==text== → <mark>text</mark>
+    s = replace_mark(&s, "==", "==", "<mark>", "</mark>");
+    // ++text++ → <ins>text</ins>
+    s = replace_mark(&s, "++", "++", "<ins>", "</ins>");
+    // ^text^ → <sup>text</sup>
+    s = replace_mark(&s, "^", "^", "<sup>", "</sup>");
+    s
+}
+
+/// Replace `open_delim...close_delim` with `html_open...html_close`,
+/// enforcing that content hugs the delimiter (no leading/trailing spaces)
+/// and does not span newlines.
+fn replace_mark(
+    input: &str,
+    open_delim: &str,
+    close_delim: &str,
+    html_open: &str,
+    html_close: &str,
+) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut pos = 0;
+
+    while pos < input.len() {
+        if let Some(start) = input[pos..].find(open_delim) {
+            let abs_start = pos + start;
+            let content_start = abs_start + open_delim.len();
+            if content_start < input.len() {
+                // Content must not start with a space.
+                let first_byte = input.as_bytes()[content_start];
+                if first_byte != b' ' && first_byte != b'\n' && first_byte != b'\r' {
+                    // Find the closing delimiter in the remaining text (no newlines).
+                    if let Some(end) = find_close_delim(&input[content_start..], close_delim) {
+                        let content = &input[content_start..content_start + end];
+                        // Content must not end with a space.
+                        if !content.ends_with(' ') && !content.is_empty() {
+                            result.push_str(&input[pos..abs_start]);
+                            result.push_str(html_open);
+                            result.push_str(content);
+                            result.push_str(html_close);
+                            pos = content_start + end + close_delim.len();
+                            continue;
+                        }
+                    }
+                }
+            }
+            // No match — advance past the delimiter to avoid infinite loop.
+            result.push_str(&input[pos..content_start]);
+            pos = content_start;
+        } else {
+            result.push_str(&input[pos..]);
+            break;
+        }
+    }
+
+    result
+}
+
+/// Find closing delimiter within text, not crossing newlines.
+fn find_close_delim(text: &str, delim: &str) -> Option<usize> {
+    let p = text.find(delim)?;
+    // Ensure no newline in between.
+    if text[..p].contains('\n') {
+        return None;
+    }
+    Some(p)
+}
+
+/// Find closing single tilde that is not part of `~~`, not across newlines.
+fn find_single_tilde_close(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\n' {
+            return None;
+        }
+        if bytes[i] == b'~' {
+            // Must be a single tilde (not followed by another ~).
+            if i + 1 < bytes.len() && bytes[i + 1] == b'~' {
+                return None; // hit a ~~, abort
+            }
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Apply open-md's inline image extension to a block source.
@@ -212,6 +381,32 @@ fn transform_inline(source: &str) -> Cow<'_, str> {
                 i = end;
                 changed = true;
                 continue;
+            }
+        }
+
+        // Single-tilde subscript: ~text~ → <sub>text</sub>
+        // Must handle BEFORE pulldown_cmark which would treat it as strikethrough.
+        // Only match single ~ not preceded/followed by another ~.
+        if rest.starts_with('~')
+            && !rest.starts_with("~~")
+            && (i == 0 || source.as_bytes()[i - 1] != b'~')
+        {
+            let content_start = i + 1;
+            if content_start < source.len() {
+                let first = source.as_bytes()[content_start];
+                if first != b' ' && first != b'\n' && first != b'~' {
+                    if let Some(end) = find_single_tilde_close(&source[content_start..]) {
+                        let content = &source[content_start..content_start + end];
+                        if !content.ends_with(' ') && !content.is_empty() {
+                            out.push_str("<sub>");
+                            out.push_str(content);
+                            out.push_str("</sub>");
+                            i = content_start + end + 1;
+                            changed = true;
+                            continue;
+                        }
+                    }
+                }
             }
         }
 
@@ -803,5 +998,72 @@ mod tests {
         assert!(html.contains("<pre"));
         assert!(html.contains("om-math-raw"));
         assert!(!html.contains("data-om-math"));
+    }
+
+    // ─── Inline text marks ──────────────────────────────────────────────
+
+    #[test]
+    fn renders_subscript() {
+        let doc = segment("H~2~O\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("H<sub>2</sub>O"));
+    }
+
+    #[test]
+    fn renders_superscript() {
+        let doc = segment("x^2^ end\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("x<sup>2</sup> end"));
+    }
+
+    #[test]
+    fn renders_inserted_text() {
+        let doc = segment("some ++added++ text\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("some <ins>added</ins> text"));
+    }
+
+    #[test]
+    fn renders_highlight_mark() {
+        let doc = segment("this is ==important== info\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("this is <mark>important</mark> info"));
+    }
+
+    #[test]
+    fn renders_strikethrough_via_gfm() {
+        let doc = segment("~~deleted~~\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("<del>deleted</del>"));
+    }
+
+    #[test]
+    fn inline_marks_skip_code_spans() {
+        let doc = segment("a `~not sub~` b\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("<code>~not sub~</code>"));
+        assert!(!html.contains("<sub>"));
+    }
+
+    #[test]
+    fn inline_marks_no_space_guard() {
+        let html = apply_inline_marks("~ nope ~");
+        assert!(!html.contains("<sub>"));
+        assert_eq!(html, "~ nope ~");
+    }
+
+    #[test]
+    fn single_tilde_does_not_collide_with_double() {
+        let doc = segment("~~strike~~ and ~sub~\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("<del>strike</del>"));
+        assert!(html.contains("<sub>sub</sub>"));
+    }
+
+    #[test]
+    fn inline_marks_skip_pre_blocks() {
+        let html = apply_inline_marks("<pre><code>~x~ ^y^</code></pre>");
+        assert!(!html.contains("<sub>"));
+        assert!(!html.contains("<sup>"));
     }
 }

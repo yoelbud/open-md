@@ -241,13 +241,13 @@ describe("parseDocument", () => {
     expect(doc.blocks[0]!.plain_html).not.toContain("om-fg-red");
   });
 
-  it("keeps the Markdown body clean of non-standard rich tokens", () => {
+  it("keeps annotation-only syntax clean in Markdown body", () => {
     const doc = parseDocument("a ==hi== and [red]{.fg-red}\n");
-    // No source-level highlight/color syntax: the literal text passes through.
-    expect(doc.blocks[0]!.html).toContain("==hi==");
+    // ==hi== is now a valid inline mark (highlight extension).
+    expect(doc.blocks[0]!.html).toContain("<mark>hi</mark>");
+    // But annotation-only syntax [text]{.fg-color} is NOT processed.
     expect(doc.blocks[0]!.html).toContain("[red]{.fg-red}");
-    expect(doc.blocks[0]!.html).not.toContain("<mark");
-    expect(doc.blocks[0]!.html).not.toContain("<span");
+    expect(doc.blocks[0]!.html).not.toContain("om-fg-red");
   });
 
   it("adds a language label to fenced code blocks", () => {

@@ -228,6 +228,116 @@ const parseFrontMatterFields = (source: string): [string, string][] => {
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+/**
+ * Post-process rendered inline HTML to apply text marks (sub, sup, ins, mark),
+ * skipping content inside `<code>` and `<pre>` tags. Mirrors
+ * `apply_inline_marks` in `crates/om-render`.
+ */
+const applyInlineMarks = (html: string): string => {
+  let result = "";
+  let i = 0;
+  while (i < html.length) {
+    if (html[i] === "<") {
+      // Check for <code or <pre — skip to matching close tag.
+      const lower = html.slice(i, i + 5).toLowerCase();
+      if (lower.startsWith("<code") || lower.startsWith("<pre")) {
+        const isPre = lower.startsWith("<pre");
+        const closeTag = isPre ? "</pre>" : "</code>";
+        const closeIdx = html.toLowerCase().indexOf(closeTag, i + 1);
+        if (closeIdx >= 0) {
+          const end = closeIdx + closeTag.length;
+          result += html.slice(i, end);
+          i = end;
+          continue;
+        }
+      }
+      // Any other tag — copy verbatim.
+      const gt = html.indexOf(">", i);
+      if (gt >= 0) {
+        result += html.slice(i, gt + 1);
+        i = gt + 1;
+      } else {
+        result += html.slice(i);
+        break;
+      }
+      continue;
+    }
+    // Find next tag.
+    const nextTag = html.indexOf("<", i);
+    const segEnd = nextTag >= 0 ? nextTag : html.length;
+    result += transformTextMarks(html.slice(i, segEnd));
+    i = segEnd;
+  }
+  return result;
+};
+
+/** Replace mark delimiters in a plain-text segment (no HTML tags). */
+const transformTextMarks = (text: string): string => {
+  let s = text;
+  // ==text== → <mark>text</mark>
+  s = s.replace(/==(\S[^=\n]*?\S)==|==(\S)==/g, (_m, g1, g2) => `<mark>${g1 ?? g2}</mark>`);
+  // ++text++ → <ins>text</ins>
+  s = s.replace(/\+\+(\S[^+\n]*?\S)\+\+|\+\+(\S)\+\+/g, (_m, g1, g2) => `<ins>${g1 ?? g2}</ins>`);
+  // ^text^ → <sup>text</sup>
+  s = s.replace(/\^(\S[^^\n]*?\S)\^|\^(\S)\^/g, (_m, g1, g2) => `<sup>${g1 ?? g2}</sup>`);
+  // ~text~ → <sub>text</sub> (single tilde only, not part of ~~)
+  s = replaceSingleTilde(s);
+  return s;
+};
+
+/** Handle ~text~ → <sub>text</sub>, avoiding ~~ collision. */
+const replaceSingleTilde = (input: string): string => {
+  let result = "";
+  let i = 0;
+  while (i < input.length) {
+    if (input[i] === "~") {
+      // Skip double tildes.
+      if (i + 1 < input.length && input[i + 1] === "~") {
+        result += "~~";
+        i += 2;
+        continue;
+      }
+      // Check preceding is not a tilde.
+      if (i > 0 && input[i - 1] === "~") {
+        result += "~";
+        i += 1;
+        continue;
+      }
+      // Try to find matching close tilde.
+      const contentStart = i + 1;
+      if (contentStart < input.length && input[contentStart] !== " " && input[contentStart] !== "\n") {
+        const closeIdx = findSingleTildeClose(input, contentStart);
+        if (closeIdx !== null) {
+          const content = input.slice(contentStart, closeIdx);
+          if (!content.endsWith(" ") && content.length > 0) {
+            result += `<sub>${content}</sub>`;
+            i = closeIdx + 1;
+            continue;
+          }
+        }
+      }
+      result += "~";
+      i += 1;
+    } else {
+      result += input[i];
+      i += 1;
+    }
+  }
+  return result;
+};
+
+/** Find closing single tilde (not part of ~~, not across newlines). */
+const findSingleTildeClose = (text: string, start: number): number | null => {
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === "\n") return null;
+    if (text[i] === "~") {
+      if (i + 1 < text.length && text[i + 1] === "~") return null;
+      return i;
+    }
+  }
+  return null;
+};
+
 const renderInline = (s: string, extra: string[] = []): string => {
   // Pull images out first (before escaping) so we can emit raw <img> tags.
   // `extra` pre-seeds placeholders with spliced annotation HTML (see
@@ -246,7 +356,7 @@ const renderInline = (s: string, extra: string[] = []): string => {
     placeholders.push(tag);
     return `${PH_OPEN}${placeholders.length - 1}${PH_CLOSE}`;
   });
-  return escapeHtml(withImgs)
+  return applyInlineMarks(escapeHtml(withImgs)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
@@ -255,7 +365,7 @@ const renderInline = (s: string, extra: string[] = []): string => {
       /\[([^\]]+)\]\(([^)]+)\)/g,
       '<a href="$2" target="_blank" rel="noreferrer">$1</a>',
     )
-    .replace(/\u0000PH(\d+)\u0000/g, (_m, i) => placeholders[+i] ?? "");
+    .replace(/\u0000PH(\d+)\u0000/g, (_m, i) => placeholders[+i] ?? ""));
 };
 
 const tableAlignAttr = (alignment: MarkdownTable["alignments"][number]) =>
