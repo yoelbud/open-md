@@ -337,19 +337,57 @@ fn render_callout(callout: &Callout) -> String {
     )
 }
 
-/// Render a fenced code block with a language label, or `None` when the block
-/// is not a fenced block carrying a (non-mermaid) language token.
+/// Render a fenced code block with a language label, copy button, and line
+/// numbers, or `None` when the block is not a fenced block carrying a
+/// (non-mermaid) language token.
 fn render_fenced_code(source: &str) -> Option<String> {
     let lang = fenced_language(source)?;
     if lang.eq_ignore_ascii_case("mermaid") {
         return None;
     }
-    let inner = render_markdown_fragment(source, true);
+    // Extract the raw code text (without fences) for the copy button data attr
+    // and line-number rendering.
+    let code_text = extract_code_text(source);
+    let escaped_code = escape_html(&code_text);
+    let line_count = code_text.lines().count().max(1);
+    let line_numbers = (1..=line_count).fold(String::new(), |mut acc, n| {
+        use std::fmt::Write;
+        let _ = write!(acc, "<span>{n}</span>");
+        acc
+    });
+
     Some(format!(
-        "<figure class=\"om-code\" data-lang=\"{attr}\"><figcaption>{label}</figcaption>{inner}</figure>\n",
+        "<figure class=\"om-code\" data-lang=\"{attr}\">\
+<figcaption>\
+<span class=\"om-code-lang\">{label}</span>\
+<button type=\"button\" class=\"om-code-copy\" data-om-copy aria-label=\"Copy code\">Copy</button>\
+</figcaption>\
+<div class=\"om-code-body\">\
+<div class=\"om-code-lines\" aria-hidden=\"true\">{line_numbers}</div>\
+<pre><code class=\"language-{attr}\">{escaped_code}</code></pre>\
+</div>\
+</figure>\n",
         attr = escape_attr(&lang),
         label = escape_html(&lang),
     ))
+}
+
+/// Extract the text content from a fenced code block (strip fences + info string).
+fn extract_code_text(source: &str) -> String {
+    let mut parser = Parser::new_ext(source, opts());
+    let mut text = String::new();
+    let mut in_code = false;
+    for event in &mut parser {
+        match event {
+            Event::Start(Tag::CodeBlock(_)) => {
+                in_code = true;
+            }
+            Event::Text(t) if in_code => text.push_str(&t),
+            Event::End(TagEnd::CodeBlock) => break,
+            _ => {}
+        }
+    }
+    text
 }
 
 /// Extract the language token from a fenced code block's info string.
@@ -663,7 +701,9 @@ mod tests {
 
         assert!(html.contains("class=\"om-code\""));
         assert!(html.contains("data-lang=\"rust\""));
-        assert!(html.contains("<figcaption>rust</figcaption>"));
+        assert!(html.contains("om-code-lang\">rust</span>"));
+        assert!(html.contains("data-om-copy"));
+        assert!(html.contains("om-code-lines"));
         assert!(html.contains("<pre>"));
     }
 

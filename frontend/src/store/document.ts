@@ -701,6 +701,78 @@ export const resizePanePair = (leftId: PaneId, rightId: PaneId, delta: number) =
   });
 };
 
+// --- outline + status bar visibility ---------------------------------------
+
+const [outlineVisible, setOutlineVisible] = createSignal(true);
+const [statusBarVisible, setStatusBarVisible] = createSignal(true);
+
+export const useOutlineVisible = () => outlineVisible;
+export const useStatusBarVisible = () => statusBarVisible;
+export const toggleOutline = () => setOutlineVisible((v) => !v);
+export const toggleStatusBar = () => setStatusBarVisible((v) => !v);
+
+// --- scroll sync -----------------------------------------------------------
+
+const [scrollSync, setScrollSync] = createSignal(true);
+
+export const useScrollSync = () => scrollSync;
+export const toggleScrollSync = () => setScrollSync((v) => !v);
+
+// --- editor modes ----------------------------------------------------------
+
+const [typewriterMode, setTypewriterMode] = createSignal(false);
+const [focusMode, setFocusMode] = createSignal(false);
+const [distractionFree, setDistractionFreeRaw] = createSignal(false);
+
+export const useTypewriterMode = () => typewriterMode;
+export const useFocusMode = () => focusMode;
+export const useDistractionFree = () => distractionFree;
+export const toggleTypewriterMode = () => setTypewriterMode((v) => !v);
+export const toggleFocusMode = () => setFocusMode((v) => !v);
+
+// Distraction-free: stash prior layout and show only source pane, hide outline + status bar.
+let preDFLayout: { visible: Record<PaneId, boolean>; outline: boolean; statusBar: boolean } | null = null;
+
+export const toggleDistractionFree = () => {
+  if (distractionFree()) {
+    // Restore
+    if (preDFLayout) {
+      batch(() => {
+        setVisible(copyPaneVisibility(preDFLayout!.visible));
+        setOutlineVisible(preDFLayout!.outline);
+        setStatusBarVisible(preDFLayout!.statusBar);
+        setActiveLayout("custom");
+      });
+      preDFLayout = null;
+    }
+    setDistractionFreeRaw(false);
+  } else {
+    preDFLayout = {
+      visible: { ...visible() },
+      outline: outlineVisible(),
+      statusBar: statusBarVisible(),
+    };
+    batch(() => {
+      setVisible({ source: true, ir: false, preview: false });
+      setOutlineVisible(false);
+      setStatusBarVisible(false);
+      setActiveLayout("custom");
+    });
+    setDistractionFreeRaw(true);
+  }
+};
+
+// --- find & replace visibility ---------------------------------------------
+
+const [findOpen, setFindOpenRaw] = createSignal(false);
+const [findShowReplace, setFindShowReplace] = createSignal(false);
+
+export const useFindOpen = () => findOpen;
+export const useFindShowReplace = () => findShowReplace;
+export const openFind = () => { setFindOpenRaw(true); setFindShowReplace(false); };
+export const openFindReplace = () => { setFindOpenRaw(true); setFindShowReplace(true); };
+export const closeFind = () => setFindOpenRaw(false);
+
 // --- block-level edits -----------------------------------------------------
 
 // Replace one block's source slice in the document. Used by IR + Preview panes.

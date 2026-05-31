@@ -3,10 +3,24 @@ import type { JSX } from "solid-js";
 import {
   clearEditingPoint,
   setEditingPoint,
+  useDocument,
   useEditingPoint,
+  useScrollSync,
   useSetSource,
   useSource,
+  useTypewriterMode,
+  useFocusMode,
 } from "../../store/document";
+import { FindReplaceBar } from "../../components/FindReplaceBar";
+import {
+  buildLineOffsets,
+  blockIndexAtOffset,
+  scrollTopToOffset,
+  offsetToScrollTop,
+  blockIdToSourceOffset,
+} from "../../store/scrollSync";
+import { SlashMenu, createSlashMenuController } from "./SlashMenu";
+import type { BlockTemplate } from "../../store/document";
 
 type PaneProps = {
   layoutControls?: JSX.Element;
@@ -26,9 +40,23 @@ export const SourcePane = (props: PaneProps) => {
   const source = useSource();
   const setSource = useSetSource();
   const editingPoint = useEditingPoint();
+  const typewriterMode = useTypewriterMode();
+  const focusMode = useFocusMode();
+  const scrollSyncEnabled = useScrollSync();
+  const doc = useDocument;
   const [scrollTop, setScrollTop] = createSignal(0);
   const [metrics, setMetrics] = createSignal<SourceMetrics>(DEFAULT_SOURCE_METRICS);
   let ta: HTMLTextAreaElement | undefined;
+
+  // --- Scroll sync: suppress feedback loops --------------------------------
+  let syncSuppressed = false;
+  const suppressSync = () => {
+    syncSuppressed = true;
+    setTimeout(() => { syncSuppressed = false; }, 60);
+  };
+
+  // Slash menu controller
+  const slash = createSlashMenuController();
 
   const updateMetrics = () => {
     if (!ta) return;
@@ -73,11 +101,143 @@ export const SourcePane = (props: PaneProps) => {
     };
   };
 
+  // --- Typewriter mode: keep cursor line vertically centered ---------------
+  const scrollCursorToCenter = () => {
+    if (!ta || !typewriterMode()) return;
+    const cursorOffset = ta.selectionStart;
+    const textBefore = ta.value.slice(0, cursorOffset);
+    const cursorLine = textBefore.split("\n").length - 1;
+    const currentMetrics = metrics();
+    const cursorY = currentMetrics.paddingTop + cursorLine * currentMetrics.lineHeight;
+    const viewportHeight = ta.clientHeight;
+    const targetScroll = cursorY - viewportHeight / 2 + currentMetrics.lineHeight / 2;
+    ta.scrollTop = Math.max(0, targetScroll);
+  };
+
+  // --- Focus mode: compute active line for dimming -------------------------
+  const [cursorLine, setCursorLine] = createSignal(0);
+  const totalLines = createMemo(() => source().split("\n").length);
+
+  const updateCursorLine = () => {
+    if (!ta) return;
+    const before = ta.value.slice(0, ta.selectionStart);
+    setCursorLine(before.split("\n").length - 1);
+  };
+
+  // --- Find & Replace: select text in textarea -----------------------------
+  const selectRange = (start: number, end: number) => {
+    if (!ta) return;
+    ta.focus();
+    ta.setSelectionRange(start, end);
+    // Scroll the selection into view
+    const textBefore = ta.value.slice(0, start);
+    const line = textBefore.split("\n").length - 1;
+    const currentMetrics = metrics();
+    const lineY = currentMetrics.paddingTop + line * currentMetrics.lineHeight;
+    const viewportHeight = ta.clientHeight;
+    if (lineY < ta.scrollTop || lineY > ta.scrollTop + viewportHeight - currentMetrics.lineHeight) {
+      ta.scrollTop = Math.max(0, lineY - viewportHeight / 3);
+    }
+    setScrollTop(ta.scrollTop);
+  };
+
+  // --- Scroll sync: Source → Preview ---------------------------------------
+  const syncSourceToPreview = () => {
+    if (!ta || !scrollSyncEnabled() || syncSuppressed) return;
+    const currentMetrics = metrics();
+    const lineOffsets = buildLineOffsets(source());
+    const offset = scrollTopToOffset(
+      ta.scrollTop,
+      currentMetrics.lineHeight,
+      currentMetrics.paddingTop,
+      lineOffsets,
+    );
+    const blocks = doc().blocks;
+    const blockIdx = blockIndexAtOffset(blocks, offset);
+    if (blockIdx < 0) return;
+    const block = blocks[blockIdx];
+    if (!block) return;
+
+    // Find the preview row with matching data-block-id
+    const previewBody = document.querySelector(".pane-body.preview");
+    if (!previewBody) return;
+    const row = previewBody.querySelector(`[data-block-id="${block.id}"]`) as HTMLElement | null;
+    if (!row) return;
+
+    suppressSync();
+    row.scrollIntoView({ block: "start", behavior: "auto" });
+  };
+
+  // --- Scroll sync: Preview → Source (called from the preview pane) --------
+  // We expose a global listener on the preview pane's scroll via a MutationObserver approach.
+  // Instead, we use a scroll event listener on the preview container.
+  const syncPreviewToSource = () => {
+    if (!ta || !scrollSyncEnabled() || syncSuppressed) return;
+    const previewBody = document.querySelector(".pane-body.preview");
+    if (!previewBody) return;
+
+    // Find the topmost visible block row
+    const rows = previewBody.querySelectorAll("[data-block-id]");
+    const containerRect = previewBody.getBoundingClientRect();
+    let topBlockId: string | null = null;
+
+    for (const row of rows) {
+      const rect = (row as HTMLElement).getBoundingClientRect();
+      if (rect.bottom > containerRect.top) {
+        topBlockId = (row as HTMLElement).dataset.blockId ?? null;
+        break;
+      }
+    }
+
+    if (!topBlockId) return;
+    const blocks = doc().blocks;
+    const offset = blockIdToSourceOffset(blocks, topBlockId);
+    const currentMetrics = metrics();
+    const lineOffsets = buildLineOffsets(source());
+    const targetScroll = offsetToScrollTop(offset, currentMetrics.lineHeight, currentMetrics.paddingTop, lineOffsets);
+
+    suppressSync();
+    ta.scrollTop = targetScroll;
+    setScrollTop(ta.scrollTop);
+  };
+
+  // --- Slash menu: handle item selection -----------------------------------
+  const handleSlashSelect = (template: BlockTemplate) => {
+    if (!ta) return;
+    const result = slash.getReplacementForItem(template, ta);
+    if (!result) return;
+    setSource(result.newText);
+    // Restore caret after source update
+    requestAnimationFrame(() => {
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(result.caretPos, result.caretPos);
+      markEditingPoint(ta);
+      updateCursorLine();
+    });
+  };
+
   onMount(() => {
     updateMetrics();
     window.addEventListener("resize", updateMetrics);
-    onCleanup(() => window.removeEventListener("resize", updateMetrics));
+
+    // Preview → Source scroll sync
+    const previewBody = document.querySelector(".pane-body.preview");
+    const previewScrollHandler = () => syncPreviewToSource();
+    if (previewBody) {
+      previewBody.addEventListener("scroll", previewScrollHandler);
+    }
+
+    onCleanup(() => {
+      window.removeEventListener("resize", updateMetrics);
+      if (previewBody) {
+        previewBody.removeEventListener("scroll", previewScrollHandler);
+      }
+    });
   });
+
+  // Focus mode CSS class on the textarea wrapper
+  const focusModeClass = () => focusMode() ? "focus-mode-active" : "";
 
   return (
     <div class="pane">
@@ -85,7 +245,8 @@ export const SourcePane = (props: PaneProps) => {
         <span>Source</span>
         <span class="header-actions">{props.layoutControls}</span>
       </div>
-      <div class="pane-body source-editor">
+      <FindReplaceBar select={selectRange} />
+      <div class={`pane-body source-editor ${focusModeClass()}`}>
         <Show when={markerLine() !== null}>
           <div class="source-edit-marker" style={markerStyle()} aria-hidden="true" />
         </Show>
@@ -94,21 +255,49 @@ export const SourcePane = (props: PaneProps) => {
           class="source-editor-textarea mono"
           spellcheck={false}
           value={source()}
+          style={focusMode() ? {
+            "--focus-cursor-line": String(cursorLine()),
+            "--focus-total-lines": String(totalLines()),
+          } as JSX.CSSProperties : undefined}
           onFocus={(e) => {
             updateMetrics();
             markEditingPoint(e.currentTarget);
+            updateCursorLine();
           }}
           onInput={(e) => {
             setSource(e.currentTarget.value);
             markEditingPoint(e.currentTarget);
+            updateCursorLine();
+            scrollCursorToCenter();
+            slash.update(e.currentTarget);
           }}
-          onSelect={(e) => markEditingPoint(e.currentTarget)}
-          onKeyUp={(e) => markEditingPoint(e.currentTarget)}
-          onMouseUp={(e) => markEditingPoint(e.currentTarget)}
-          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-          onBlur={() => clearEditingPoint("source")}
+          onSelect={(e) => { markEditingPoint(e.currentTarget); updateCursorLine(); }}
+          onKeyDown={(e) => {
+            if (slash.handleKeyDown(e, e.currentTarget)) return;
+          }}
+          onKeyUp={(e) => {
+            markEditingPoint(e.currentTarget);
+            updateCursorLine();
+            scrollCursorToCenter();
+            slash.update(e.currentTarget);
+          }}
+          onMouseUp={(e) => { markEditingPoint(e.currentTarget); updateCursorLine(); }}
+          onScroll={(e) => {
+            setScrollTop(e.currentTarget.scrollTop);
+            syncSourceToPreview();
+          }}
+          onBlur={() => {
+            clearEditingPoint("source");
+            slash.dismiss();
+          }}
+        />
+        <SlashMenu
+          state={slash.state()}
+          onSelect={handleSlashSelect}
+          onDismiss={slash.dismiss}
         />
       </div>
     </div>
   );
 };
+

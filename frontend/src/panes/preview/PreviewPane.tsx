@@ -25,6 +25,7 @@ import { parseMarkdownTable } from "../../markdown/table";
 import { fromEditableText, toEditableText } from "../../markdown/blockEdit";
 import { ImageBlockView } from "./ImageBlockView";
 import { TableBlockView } from "./TableBlockView";
+import { extractHeadings, isTocToken, renderTocHtml } from "../../store/outline";
 
 const FONT_OPTIONS: { id: PreviewFontFamily; label: string }[] = [
   { id: "sans", label: "Sans" },
@@ -138,8 +139,14 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
   // Keep view HTML in sync when source changes externally (not while editing).
   // Markdown mode renders the plain, standard-Markdown HTML; rich mode renders
   // the IR-enriched HTML with the annotation overlay.
+  // Special case: [TOC] paragraph blocks render an auto table-of-contents.
+  const doc = useDocument;
   createEffect(() => {
-    const html = previewMode() === "markdown" ? props.block.plain_html : props.block.html;
+    let html = previewMode() === "markdown" ? props.block.plain_html : props.block.html;
+    if (isTocToken(props.block)) {
+      const headings = extractHeadings(doc().blocks);
+      html = renderTocHtml(headings);
+    }
     if (!viewRef || editing()) return;
     renderVersion += 1;
     viewRef.dataset.mermaidVersion = String(renderVersion);
@@ -243,6 +250,7 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
     return (
       <div
         class="preview-row"
+        data-block-id={props.block.id}
         classList={{ "editing-point": isEditingPoint() }}
         onFocusIn={() => markEditingPoint()}
         onFocusOut={(e) => {
@@ -272,6 +280,7 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
     return (
       <div
         class="preview-row"
+        data-block-id={props.block.id}
         classList={{ "editing-point": isEditingPoint() }}
         onFocusIn={() => markEditingPoint()}
         onFocusOut={(e) => {
@@ -295,6 +304,7 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
   return (
     <div
       class="preview-row"
+      data-block-id={props.block.id}
       classList={{ "editing-point": isEditingPoint() }}
       onFocusIn={() => markEditingPoint()}
       onFocusOut={(e) => {
@@ -493,6 +503,23 @@ export const PreviewPane = (props: PaneProps) => {
     }
   };
 
+  // Handle click on [data-om-copy] buttons (code block copy)
+  const handlePreviewClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const copyBtn = target.closest("[data-om-copy]") as HTMLButtonElement | null;
+    if (!copyBtn) return;
+    e.stopPropagation();
+    const figure = copyBtn.closest("figure.om-code");
+    const code = figure?.querySelector("pre code");
+    const text = code?.textContent ?? "";
+    if (text && typeof navigator?.clipboard?.writeText === "function") {
+      void navigator.clipboard.writeText(text).then(() => {
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+      });
+    }
+  };
+
   return (
     <div class="pane">
       <div class="pane-header">
@@ -524,6 +551,7 @@ export const PreviewPane = (props: PaneProps) => {
         onDragOver={onDragOver}
         onDragLeave={() => setDragOver(false)}
         onPaste={onPaste}
+        onClick={handlePreviewClick}
         tabIndex={0}
       >
         <div class="preview-document">

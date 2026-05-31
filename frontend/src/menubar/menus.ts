@@ -12,22 +12,42 @@ import {
   LAYOUT_PRESETS,
   newDocument,
   openFile,
+  openFind,
+  openFindReplace,
   openProject,
   openProjectDocument,
   redo,
   resetLayout,
   saveFile,
   saveProject,
+  toggleDistractionFree,
+  toggleFocusMode,
+  toggleOutline,
   togglePane,
+  toggleScrollSync,
+  toggleStatusBar,
+  toggleTypewriterMode,
   undo,
   useActiveLayout,
+  useDistractionFree,
+  useFocusMode,
+  useOutlineVisible,
   usePaneVisible,
+  useScrollSync,
+  useStatusBarVisible,
+  useTypewriterMode,
 } from "../store/document";
 import { exportPreviewPdf } from "../ipc/previewPdf";
 
 export const buildMenus = (): MenuDef[] => {
   const vis = usePaneVisible();
   const activeLayout = useActiveLayout();
+  const outlineVis = useOutlineVisible();
+  const statusBarVis = useStatusBarVisible();
+  const typewriter = useTypewriterMode();
+  const focus = useFocusMode();
+  const df = useDistractionFree();
+  const scrollSyncOn = useScrollSync();
 
   const insertItems = BLOCK_TEMPLATES.map((t) => ({
     kind: "action" as const,
@@ -69,6 +89,19 @@ export const buildMenus = (): MenuDef[] => {
           shortcut: "Ctrl+Y",
           action: () => { if (canRedo()) redo(); },
         },
+        { kind: "sep" },
+        {
+          kind: "action",
+          label: "Find…",
+          shortcut: "Ctrl+F",
+          action: openFind,
+        },
+        {
+          kind: "action",
+          label: "Find & Replace…",
+          shortcut: "Ctrl+H",
+          action: openFindReplace,
+        },
       ],
     },
     {
@@ -94,6 +127,48 @@ export const buildMenus = (): MenuDef[] => {
           shortcut: "Ctrl+3",
           checked: () => vis().preview,
           action: () => togglePane("preview"),
+        },
+        { kind: "sep" },
+        {
+          kind: "check",
+          label: "Outline panel",
+          shortcut: "Ctrl+Shift+O",
+          checked: () => outlineVis(),
+          action: toggleOutline,
+        },
+        {
+          kind: "check",
+          label: "Status bar",
+          checked: () => statusBarVis(),
+          action: toggleStatusBar,
+        },
+        { kind: "sep" },
+        {
+          kind: "check",
+          label: "Typewriter mode",
+          shortcut: "Alt+T",
+          checked: () => typewriter(),
+          action: toggleTypewriterMode,
+        },
+        {
+          kind: "check",
+          label: "Focus mode",
+          shortcut: "Alt+F",
+          checked: () => focus(),
+          action: toggleFocusMode,
+        },
+        {
+          kind: "check",
+          label: "Distraction-free",
+          shortcut: "Alt+D",
+          checked: () => df(),
+          action: toggleDistractionFree,
+        },
+        {
+          kind: "check",
+          label: "Scroll sync",
+          checked: () => scrollSyncOn(),
+          action: toggleScrollSync,
         },
         { kind: "sep" },
         {

@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, createEffect, For, onCleanup, onMount, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import { SourcePane } from "./panes/source/SourcePane";
 import { IrPane } from "./panes/ir/IrPane";
@@ -6,6 +6,10 @@ import { PreviewPane } from "./panes/preview/PreviewPane";
 import { PrintPreview } from "./panes/preview/PrintPreview";
 import { MarkToolbar } from "./panes/MarkToolbar";
 import { ProjectSidebar } from "./panes/project/ProjectSidebar";
+import { OutlinePanel } from "./panes/outline/OutlinePanel";
+import { StatusBar } from "./components/StatusBar";
+import { CommandPalette } from "./components/CommandPalette";
+import { RecoveryBanner } from "./components/RecoveryBanner";
 import { MenuBar } from "./menubar/MenuBar";
 import { buildMenus } from "./menubar/menus";
 import {
@@ -18,13 +22,27 @@ import {
   resizePanePair,
   togglePane,
   useActiveLayout,
+  useOutlineVisible,
   usePaneSizes,
   usePaneVisible,
+  useSource,
+  useStatusBarVisible,
   useVisiblePanes,
   usePath,
+  useSetSource,
 } from "./store/document";
 import type { PaneDropPosition, PaneId, PaneMoveDirection } from "./store/document";
 import { registerShortcuts } from "./ipc/shortcuts";
+import { flattenMenus } from "./store/commands";
+import type { Command } from "./store/commands";
+import {
+  debounce,
+  loadDraft,
+  saveDraft,
+  clearDraft,
+  shouldOfferRecovery,
+} from "./store/autosave";
+import type { Draft } from "./store/autosave";
 
 const PANE_DRAG_TYPE = "application/x-open-md-pane";
 const PANE_LABELS: Record<PaneId, string> = {
@@ -38,17 +56,61 @@ const isPaneId = (value: string): value is PaneId =>
 
 export const App = () => {
   const path = usePath();
+  const source = useSource();
+  const setSource = useSetSource();
   const visible = usePaneVisible();
   const visiblePanes = useVisiblePanes();
   const sizes = usePaneSizes();
   const activeLayout = useActiveLayout();
+  const outlineVisible = useOutlineVisible();
+  const statusBarVisible = useStatusBarVisible();
   const menus = buildMenus();
+  const [paletteOpen, setPaletteOpen] = createSignal(false);
+  const [recoveryDraft, setRecoveryDraft] = createSignal<Draft | null>(null);
   const [draggingPane, setDraggingPane] = createSignal<PaneId | null>(null);
   const [dropTarget, setDropTarget] = createSignal<{
     id: PaneId;
     position: PaneDropPosition;
   } | null>(null);
   let panesRef: HTMLDivElement | undefined;
+
+  // Command palette: derive commands from menu tree
+  const commands = (): Command[] => {
+    const extra: Command[] = [
+      { id: "palette-cmd", label: "Command Palette", shortcut: "Ctrl+Shift+P", action: () => setPaletteOpen(true) },
+    ];
+    return [...flattenMenus(menus), ...extra];
+  };
+
+  // Auto-save: debounce writes to localStorage
+  const autosave = debounce((src: string, p: string) => saveDraft(src, p), 1500);
+  createEffect(() => {
+    const src = source();
+    const p = path();
+    autosave.run(src, p);
+  });
+
+  // Recovery check at startup
+  onMount(() => {
+    const draft = loadDraft();
+    if (shouldOfferRecovery(draft, source())) {
+      setRecoveryDraft(draft);
+    }
+  });
+
+  const handleRestore = () => {
+    const draft = recoveryDraft();
+    if (draft) {
+      setSource(draft.source);
+    }
+    setRecoveryDraft(null);
+    clearDraft();
+  };
+
+  const handleDismissRecovery = () => {
+    setRecoveryDraft(null);
+    clearDraft();
+  };
 
   const columns = () => {
     const panes = visiblePanes();
@@ -195,11 +257,31 @@ export const App = () => {
   onMount(() => {
     const cleanup = registerShortcuts();
     onCleanup(cleanup);
+
+    // Command palette shortcut (Ctrl+Shift+P)
+    const paletteHandler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", paletteHandler);
+    onCleanup(() => window.removeEventListener("keydown", paletteHandler));
+
+    // Cleanup autosave debounce on unmount
+    onCleanup(() => autosave.cancel());
   });
 
   return (
     <>
-    <div class="app">
+    <div class="app" classList={{ "has-status-bar": statusBarVisible() }}>
+      <Show when={recoveryDraft()}>
+        <RecoveryBanner
+          draft={recoveryDraft()}
+          onRestore={handleRestore}
+          onDismiss={handleDismissRecovery}
+        />
+      </Show>
       <div class="titlebar">
         <MenuBar menus={menus} />
         <span class="titlebar-path">{path()}</span>
@@ -254,6 +336,9 @@ export const App = () => {
       </div>
       <div class="workspace">
         <ProjectSidebar />
+        <Show when={outlineVisible()}>
+          <OutlinePanel />
+        </Show>
         <div
           ref={panesRef}
           class="panes"
@@ -302,9 +387,13 @@ export const App = () => {
           </For>
         </div>
       </div>
+      <Show when={statusBarVisible()}>
+        <StatusBar />
+      </Show>
     </div>
     <PrintPreview />
     <MarkToolbar />
+    <CommandPalette commands={commands()} open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
     </>
   );
 };
