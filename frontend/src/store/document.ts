@@ -878,6 +878,8 @@ export const BLOCK_TEMPLATES: BlockTemplate[] = [
   { id: "table", label: "Table", icon: "▦",
     snippet: "| col a | col b |\n| ----- | ----- |\n| 1     | 2     |\n\n" },
   { id: "hr", label: "Divider", icon: "—", snippet: "---\n\n" },
+  { id: "math", label: "Math (display)", icon: "∑",
+    snippet: "$$\n\\int_0^1 x^2 dx\n$$\n\n" },
   { id: "link", label: "Link (paragraph)", icon: "🔗",
     snippet: "[link text](https://example.com)\n\n" },
   { id: "img", label: "Image (URL)", icon: "🖼",

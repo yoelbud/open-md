@@ -96,6 +96,28 @@
 .om-toc .toc-level-5 { padding-left: 4rem; }
 .om-toc .toc-level-6 { padding-left: 5rem; }
 
+/* Math (KaTeX) */
+.om-math-display {
+  margin: 0.6rem 0;
+  padding: 0.4rem 0;
+  overflow-x: auto;
+  text-align: center;
+}
+.om-math-raw {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--bg-pane-alt) 50%, transparent);
+  color: var(--fg-dim);
+  overflow-x: auto;
+}
+.om-math-error {
+  color: var(--om-red);
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
 /* Front matter metadata panel */
 .om-frontmatter {
   margin: 0.5rem 0;

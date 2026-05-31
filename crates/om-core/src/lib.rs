@@ -19,6 +19,7 @@ pub mod callout;
 pub mod frontmatter;
 pub mod image;
 pub mod ir;
+pub mod math;
 pub mod segment;
 
 pub use annotation::{Annotations, BlockAnnotation, MarkRange};

@@ -286,6 +286,14 @@ const fencedCode = (source: string): { info: string; body: string } | null => {
 const isMermaidInfo = (info: string): boolean =>
   (info.split(/\s+/)[0] ?? "").toLowerCase() === "mermaid";
 
+/** Parse the inner TeX from a display-math block (`$$ ... $$`). */
+const parseDisplayMath = (source: string): string | null => {
+  const trimmed = source.trim();
+  if (!trimmed.startsWith("$$") || !trimmed.endsWith("$$")) return null;
+  const inner = trimmed.slice(2, -2).trim();
+  return inner.length > 0 ? inner : null;
+};
+
 const previewMetaForBlock = (kind: BlockKind, source: string): BlockPreviewMeta | undefined => {
   if (kind !== "table") return undefined;
   const table = parseMarkdownTable(source);
@@ -351,6 +359,11 @@ const renderBlock = (kind: BlockKind, source: string, marks: string[] = []): str
     }
     case "html":
       return trimmed;
+    case "math": {
+      const tex = parseDisplayMath(trimmed);
+      if (tex) return `<div class="om-math-display" data-om-math="display">${escapeHtml(tex)}</div>`;
+      return `<p>${renderInline(trimmed, marks)}</p>`;
+    }
     case "image": {
       const img = parseImageBlock(trimmed);
       if (!img) return `<p>${renderInline(trimmed, marks)}</p>`;
@@ -405,6 +418,8 @@ const renderBlockPlain = (kind: BlockKind, source: string): string => {
     }
     case "html":
       return trimmed;
+    case "math":
+      return `<pre class="om-math-raw"><code>${escapeHtml(trimmed)}</code></pre>`;
     case "image": {
       const img = parseImageBlock(trimmed);
       if (!img) return `<p>${renderInline(trimmed)}</p>`;
@@ -497,9 +512,11 @@ export const parseDocument = (
 
     const kind: BlockKind = parseImageBlock(buf)
       ? "image"
-      : /^\s*>/.test(startLine) && parseCalloutStub(buf)
-        ? "callout"
-        : blockKindFromLine(startLine);
+      : parseDisplayMath(buf) !== null
+        ? "math"
+        : /^\s*>/.test(startLine) && parseCalloutStub(buf)
+          ? "callout"
+          : blockKindFromLine(startLine);
     const slice = source.slice(start, offset);
     const hash = hashStr(slice);
     const preview = previewMetaForBlock(kind, buf);

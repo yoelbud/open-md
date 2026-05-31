@@ -12,6 +12,7 @@ use crate::callout::is_callout;
 use crate::frontmatter::detect_front_matter;
 use crate::image::parse_image_block;
 use crate::ir::{Block, BlockKind, Document};
+use crate::math::is_display_math;
 
 const fn opts() -> Options {
     Options::ENABLE_TABLES
@@ -117,6 +118,7 @@ fn push_block(out: &mut Vec<Block>, source: &str, start: usize, end: usize, kind
     let slice = &source[start..end];
     let kind = match kind {
         BlockKind::Paragraph if parse_image_block(slice).is_some() => BlockKind::Image,
+        BlockKind::Paragraph if is_display_math(slice) => BlockKind::Math,
         BlockKind::BlockQuote if is_callout(slice) => BlockKind::Callout,
         other => other,
     };
@@ -219,6 +221,20 @@ mod tests {
         let doc = segment("> just a quote\n");
 
         assert_eq!(doc.blocks[0].kind, BlockKind::BlockQuote);
+    }
+
+    #[test]
+    fn display_math_emits_math_kind() {
+        let doc = segment("$$\n\\int_0^1 x^2 dx\n$$\n");
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::Math);
+    }
+
+    #[test]
+    fn single_line_display_math_emits_math_kind() {
+        let doc = segment("$$E=mc^2$$\n");
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::Math);
     }
 
     #[test]

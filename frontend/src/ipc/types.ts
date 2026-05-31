@@ -13,6 +13,7 @@ export type BlockKind =
   | "thematic_break"
   | "html"
   | "task_list"
+  | "math"
   | "image"
   | "unknown";
 

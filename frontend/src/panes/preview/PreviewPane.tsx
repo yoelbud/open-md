@@ -26,6 +26,8 @@ import { fromEditableText, toEditableText } from "../../markdown/blockEdit";
 import { ImageBlockView } from "./ImageBlockView";
 import { TableBlockView } from "./TableBlockView";
 import { extractHeadings, isTocToken, renderTocHtml } from "../../store/outline";
+import { splitInlineMath } from "../../store/mathInline";
+import "katex/dist/katex.min.css";
 
 const FONT_OPTIONS: { id: PreviewFontFamily; label: string }[] = [
   { id: "sans", label: "Sans" },
@@ -66,6 +68,16 @@ const loadMermaid = async (): Promise<MermaidApi> => {
   return mermaidPromise;
 };
 
+// ── KaTeX lazy loader ────────────────────────────────────────────────────────
+type KatexApi = typeof import("katex");
+
+let katexPromise: Promise<KatexApi> | undefined;
+
+const loadKatex = async (): Promise<KatexApi> => {
+  katexPromise ??= import("katex");
+  return katexPromise;
+};
+
 const renderMermaidBlocks = async (root: HTMLElement, blockId: string, version: number) => {
   const nodes = Array.from(root.querySelectorAll<HTMLElement>("[data-om-mermaid]"));
   if (!nodes.length) return;
@@ -102,6 +114,89 @@ const renderMermaidBlocks = async (root: HTMLElement, blockId: string, version: 
       node.removeAttribute("data-om-mermaid");
       node.append(error, details);
     }
+  }
+};
+
+// ── KaTeX display-math rendering ────────────────────────────────────────────
+const renderMathBlocks = async (root: HTMLElement, version: number) => {
+  const nodes = Array.from(root.querySelectorAll<HTMLElement>("[data-om-math=\"display\"]"));
+  if (!nodes.length) return;
+
+  try {
+    const katex = await loadKatex();
+    for (const node of nodes) {
+      if (!root.isConnected || root.dataset.mermaidVersion !== String(version)) return;
+      const tex = node.textContent ?? "";
+      try {
+        node.innerHTML = katex.renderToString(tex, { displayMode: true, throwOnError: false });
+      } catch {
+        node.innerHTML = `<div class="om-math-error" role="alert">Math render error</div><pre class="om-math-source">${tex}</pre>`;
+      }
+      node.removeAttribute("data-om-math");
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    for (const node of nodes) {
+      const tex = node.textContent ?? "";
+      node.innerHTML = `<div class="om-math-error" role="alert">KaTeX load failed: ${message}</div><pre class="om-math-source">${tex}</pre>`;
+      node.removeAttribute("data-om-math");
+    }
+  }
+};
+
+// ── KaTeX inline-math rendering ─────────────────────────────────────────────
+const renderInlineMath = async (root: HTMLElement, version: number) => {
+  // Walk text nodes, skip <code>, <pre>, and already-rendered math
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (parent.closest("code, pre, [data-om-math], .katex")) return NodeFilter.FILTER_REJECT;
+      if (!node.textContent || !node.textContent.includes("$")) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const textNodes: Text[] = [];
+  let current = walker.nextNode();
+  while (current) {
+    textNodes.push(current as Text);
+    current = walker.nextNode();
+  }
+
+  if (!textNodes.length) return;
+
+  let katex: KatexApi | undefined;
+  try {
+    katex = await loadKatex();
+  } catch {
+    return;
+  }
+
+  for (const textNode of textNodes) {
+    if (!root.isConnected || root.dataset.mermaidVersion !== String(version)) return;
+    const text = textNode.textContent ?? "";
+    const segments = splitInlineMath(text);
+    if (segments.length <= 1 && segments[0]?.type === "text") continue;
+    if (!segments.some((s) => s.type === "math")) continue;
+
+    const frag = document.createDocumentFragment();
+    for (const seg of segments) {
+      if (seg.type === "text") {
+        frag.appendChild(document.createTextNode(seg.value));
+      } else {
+        const span = document.createElement("span");
+        span.setAttribute("data-om-math", "inline");
+        try {
+          span.innerHTML = katex.renderToString(seg.value, { displayMode: false, throwOnError: false });
+        } catch {
+          span.textContent = `$${seg.value}$`;
+          span.className = "om-math-error-inline";
+        }
+        frag.appendChild(span);
+      }
+    }
+    textNode.parentNode?.replaceChild(frag, textNode);
   }
 };
 
@@ -152,6 +247,10 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
     viewRef.dataset.mermaidVersion = String(renderVersion);
     viewRef.innerHTML = html;
     void renderMermaidBlocks(viewRef, props.block.id, renderVersion);
+    if (previewMode() === "rich") {
+      void renderMathBlocks(viewRef, renderVersion);
+      void renderInlineMath(viewRef, renderVersion);
+    }
   });
 
   // Auto-focus + select textarea when entering edit mode.

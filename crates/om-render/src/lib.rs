@@ -24,6 +24,7 @@ use om_core::{
     callout::{parse_callout, Callout},
     frontmatter::parse_front_matter,
     image::{parse_image_at, parse_image_block, ParsedImage},
+    math::parse_display_math,
     Block, BlockKind, Document, MarkRange,
 };
 use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
@@ -80,6 +81,9 @@ fn render_block_rich(block: &Block, ranges: &[MarkRange]) -> String {
     if let Some(diagram) = mermaid_diagram_source(&block.source) {
         return render_mermaid_diagram(&diagram);
     }
+    if let Some(tex) = parse_display_math(&block.source) {
+        return render_display_math(tex);
+    }
     match block.kind {
         BlockKind::FrontMatter => {
             return render_front_matter_rich(&block.source);
@@ -117,6 +121,12 @@ fn render_block_rich(block: &Block, ranges: &[MarkRange]) -> String {
 fn render_block_plain(block: &Block) -> String {
     if block.kind == BlockKind::FrontMatter {
         return render_front_matter_plain(&block.source);
+    }
+    if block.kind == BlockKind::Math {
+        return format!(
+            "<pre class=\"om-math-raw\"><code>{}</code></pre>\n",
+            escape_html(block.source.trim())
+        );
     }
     if block.kind == BlockKind::Image {
         if let Some(image) = parse_image_block(&block.source) {
@@ -481,6 +491,14 @@ fn render_mermaid_diagram(source: &str) -> String {
     )
 }
 
+/// Render a display-math block as a KaTeX-ready placeholder.
+fn render_display_math(tex: &str) -> String {
+    format!(
+        "<div class=\"om-math-display\" data-om-math=\"display\">{}</div>\n",
+        escape_html(tex)
+    )
+}
+
 /// Rich rendering of front matter: a styled metadata panel with key/value rows.
 fn render_front_matter_rich(source: &str) -> String {
     if let Some(fm) = parse_front_matter(source) {
@@ -753,5 +771,37 @@ mod tests {
 
         assert!(!html.contains("om-code"));
         assert!(html.contains("<pre><code>"));
+    }
+
+    #[test]
+    fn renders_display_math_as_placeholder() {
+        let doc = segment("$$\n\\int_0^1 x^2 dx\n$$\n");
+        let html = render_block(&doc.blocks[0]);
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::Math);
+        assert!(html.contains("om-math-display"));
+        assert!(html.contains("data-om-math=\"display\""));
+        assert!(html.contains("\\int_0^1 x^2 dx"));
+        assert!(!html.contains("$$"));
+    }
+
+    #[test]
+    fn escapes_display_math_html() {
+        let doc = segment("$$\na < b > c\n$$\n");
+        let html = render_block(&doc.blocks[0]);
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::Math);
+        assert!(html.contains("a &lt; b &gt; c"));
+        assert!(!html.contains("a < b > c"));
+    }
+
+    #[test]
+    fn plain_mode_renders_math_as_preformatted() {
+        let doc = segment("$$\nx^2\n$$\n");
+        let html = render_block_mode(&doc.blocks[0], RenderMode::Plain, &[]);
+
+        assert!(html.contains("<pre"));
+        assert!(html.contains("om-math-raw"));
+        assert!(!html.contains("data-om-math"));
     }
 }
