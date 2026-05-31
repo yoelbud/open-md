@@ -20,6 +20,7 @@ import {
   resetLayout,
   saveFile,
   saveProject,
+  toggleComments,
   toggleDistractionFree,
   toggleFocusMode,
   toggleOutline,
@@ -29,6 +30,7 @@ import {
   toggleTypewriterMode,
   undo,
   useActiveLayout,
+  useCommentsVisible,
   useDistractionFree,
   useFocusMode,
   useOutlineVisible,
@@ -49,6 +51,7 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
   const vis = usePaneVisible();
   const activeLayout = useActiveLayout();
   const outlineVis = useOutlineVisible();
+  const commentsVis = useCommentsVisible();
   const statusBarVis = useStatusBarVisible();
   const typewriter = useTypewriterMode();
   const focus = useFocusMode();
@@ -153,6 +156,13 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
           shortcut: "Ctrl+Shift+O",
           checked: () => outlineVis(),
           action: toggleOutline,
+        },
+        {
+          kind: "check",
+          label: "Comments panel",
+          shortcut: "Ctrl+Shift+M",
+          checked: () => commentsVis(),
+          action: toggleComments,
         },
         {
           kind: "check",

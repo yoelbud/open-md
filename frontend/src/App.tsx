@@ -7,6 +7,7 @@ import { PrintPreview } from "./panes/preview/PrintPreview";
 import { MarkToolbar } from "./panes/MarkToolbar";
 import { ProjectSidebar } from "./panes/project/ProjectSidebar";
 import { OutlinePanel } from "./panes/outline/OutlinePanel";
+import { CommentsPanel } from "./panes/comments/CommentsPanel";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette } from "./components/CommandPalette";
 import { RecoveryBanner } from "./components/RecoveryBanner";
@@ -23,6 +24,7 @@ import {
   resizePanePair,
   togglePane,
   useActiveLayout,
+  useCommentsVisible,
   useOutlineVisible,
   usePaneSizes,
   usePaneVisible,
@@ -44,6 +46,7 @@ import {
   shouldOfferRecovery,
 } from "./store/autosave";
 import type { Draft } from "./store/autosave";
+import { initCommentsEffect } from "./store/comments";
 
 const PANE_DRAG_TYPE = "application/x-open-md-pane";
 const PANE_LABELS: Record<PaneId, string> = {
@@ -64,8 +67,13 @@ export const App = () => {
   const sizes = usePaneSizes();
   const activeLayout = useActiveLayout();
   const outlineVisible = useOutlineVisible();
+  const commentsVisible = useCommentsVisible();
   const statusBarVisible = useStatusBarVisible();
   const menus = buildMenus({ onOpenCustomCss: () => setCustomCssOpen(true) });
+
+  // Initialize comments reactive persistence
+  initCommentsEffect();
+
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [customCssOpen, setCustomCssOpen] = createSignal(false);
   const [recoveryDraft, setRecoveryDraft] = createSignal<Draft | null>(null);
@@ -388,6 +396,9 @@ export const App = () => {
             }}
           </For>
         </div>
+        <Show when={commentsVisible()}>
+          <CommentsPanel />
+        </Show>
       </div>
       <Show when={statusBarVisible()}>
         <StatusBar />

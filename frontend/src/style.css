@@ -74,6 +74,197 @@
 .outline-level-5 { padding-left: 2.9rem; }
 .outline-level-6 { padding-left: 3.5rem; }
 
+/* Comments panel */
+.comments-panel {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  min-width: 220px;
+  max-width: 400px;
+  border-left: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-pane-alt) 70%, transparent);
+  overflow: hidden;
+}
+.comments-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.85rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+.comments-panel-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+.comments-filter {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg-dim);
+}
+.comments-panel-empty {
+  padding: 0.6rem 0.85rem;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+}
+.comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+.comment-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  background: var(--bg);
+  position: relative;
+}
+.comment-card.comment-resolved {
+  opacity: 0.6;
+  border-style: dashed;
+}
+.comment-card.comment-orphaned {
+  border-color: var(--warning, #e6a817);
+}
+.comment-anchor-btn {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.4rem;
+  background: none;
+  border: none;
+  font-size: 0.7rem;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+}
+.comment-anchor-btn:hover {
+  text-decoration: underline;
+}
+.comment-quote {
+  margin: 0 0 0.3rem;
+  padding: 0.2rem 0.4rem;
+  border-left: 3px solid var(--accent);
+  font-size: 0.75rem;
+  color: var(--fg-dim);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.comment-body {
+  margin: 0 0 0.25rem;
+  font-size: 0.82rem;
+  color: var(--fg);
+  line-height: 1.4;
+}
+.comment-meta {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--fg-dim);
+  margin-bottom: 0.3rem;
+}
+.comment-actions {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+.comment-btn {
+  font-size: 0.68rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+.comment-btn:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--fg);
+}
+.comment-btn-danger:hover {
+  background: color-mix(in srgb, red 12%, transparent);
+  color: red;
+}
+.comment-replies {
+  margin-top: 0.4rem;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--border);
+}
+.comment-reply {
+  margin-bottom: 0.3rem;
+}
+.comment-reply-body {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--fg);
+}
+.comment-edit-form,
+.comment-reply-form {
+  margin-top: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.comment-edit-ta {
+  font-size: 0.78rem;
+  padding: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+  min-height: 2.5rem;
+}
+
+/* Comment indicators on preview rows */
+.om-has-comment {
+  border-left: 3px solid var(--accent);
+}
+.om-comment-badge {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.2rem;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  line-height: 1.1rem;
+  text-align: center;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 2;
+}
+.om-comment-flash {
+  animation: om-flash 1.5s ease-out;
+}
+@keyframes om-flash {
+  0% { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  100% { background: transparent; }
+}
+.preview-row-comment-btn {
+  background: none;
+  border: none;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+}
+.preview-row:hover .preview-row-comment-btn,
+.preview-row-comment-btn:focus {
+  opacity: 1;
+}
+
 /* Auto table-of-contents ([TOC]) */
 .om-toc > ul {
   list-style: none;

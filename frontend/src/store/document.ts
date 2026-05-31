@@ -714,11 +714,14 @@ export const resizePanePair = (leftId: PaneId, rightId: PaneId, delta: number) =
 
 const [outlineVisible, setOutlineVisible] = createSignal(true);
 const [statusBarVisible, setStatusBarVisible] = createSignal(true);
+const [commentsVisible, setCommentsVisibleRaw] = createSignal(false);
 
 export const useOutlineVisible = () => outlineVisible;
 export const useStatusBarVisible = () => statusBarVisible;
+export const useCommentsVisible = () => commentsVisible;
 export const toggleOutline = () => setOutlineVisible((v) => !v);
 export const toggleStatusBar = () => setStatusBarVisible((v) => !v);
+export const toggleComments = () => setCommentsVisibleRaw((v) => !v);
 
 // --- scroll sync -----------------------------------------------------------
 

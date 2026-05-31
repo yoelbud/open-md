@@ -46,6 +46,7 @@ import {
   useDiffSummary,
   diffStatusForBlock,
 } from "../../store/diff";
+import { addComment, useCommentsForBlock } from "../../store/comments";
 import "katex/dist/katex.min.css";
 
 const FONT_OPTIONS: { id: PreviewFontFamily; label: string }[] = [
@@ -470,13 +471,33 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
   // Derive anchor name for this block (used for container attributes).
   const anchorName = () => parseAnchor(props.block.source);
 
+  // ── comment indicator ──
+  const blockComments = useCommentsForBlock(() => props.block.id);
+  const hasComments = () => blockComments().length > 0;
+
+  const handleAddComment = () => {
+    // Capture any text selection as the quote
+    let quote: string | undefined;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && viewRef?.contains(selection.anchorNode)) {
+      const text = selection.toString().trim();
+      if (text) quote = text;
+    }
+    const body = prompt("Add a comment:");
+    if (body?.trim()) {
+      const payload: Parameters<typeof addComment>[0] = { blockId: props.block.id, body: body.trim() };
+      if (quote) payload.quote = quote;
+      addComment(payload);
+    }
+  };
+
   return (
     <div
       class="preview-row"
       data-block-id={props.block.id}
       data-om-anchor={anchorName() ?? undefined}
       id={anchorName() ? `ref-${anchorName()}` : undefined}
-      classList={{ "editing-point": isEditingPoint(), ...diffClasses() }}
+      classList={{ "editing-point": isEditingPoint(), "om-has-comment": hasComments(), ...diffClasses() }}
       onFocusIn={() => markEditingPoint()}
       onFocusOut={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -484,6 +505,11 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
         }
       }}
     >
+      <Show when={hasComments()}>
+        <span class="om-comment-badge" title={`${blockComments().length} comment(s)`}>
+          {blockComments().length}
+        </span>
+      </Show>
       <div
         ref={viewRef}
         class="preview-block"
@@ -521,6 +547,14 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
         <Show when={editing()}>
           <span class="preview-edit-hint">Esc / Ctrl+Enter</span>
         </Show>
+        <button
+          type="button"
+          class="preview-row-comment-btn"
+          title="Add comment"
+          onClick={(e) => { e.stopPropagation(); handleAddComment(); }}
+        >
+          💬
+        </button>
         <InsertMenu
           block={props.block}
           label=""

@@ -12,6 +12,7 @@ import {
   openFindReplace,
   redo,
   saveProject,
+  toggleComments,
   toggleDistractionFree,
   toggleFocusMode,
   togglePane,
@@ -72,6 +73,12 @@ export const registerShortcuts = () => {
       case "h":
         e.preventDefault();
         openFindReplace();
+        break;
+      case "m":
+        if (e.shiftKey) {
+          e.preventDefault();
+          toggleComments();
+        }
         break;
       case "escape":
         if (useFindOpen()()) closeFind();
