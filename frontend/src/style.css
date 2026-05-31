@@ -96,6 +96,46 @@
 .om-toc .toc-level-5 { padding-left: 4rem; }
 .om-toc .toc-level-6 { padding-left: 5rem; }
 
+/* Front matter metadata panel */
+.om-frontmatter {
+  margin: 0.5rem 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-pane-alt) 60%, transparent);
+  overflow: hidden;
+}
+.om-frontmatter table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.om-frontmatter th,
+.om-frontmatter td {
+  text-align: left;
+  padding: 0.35rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.om-frontmatter tr:last-child th,
+.om-frontmatter tr:last-child td {
+  border-bottom: none;
+}
+.om-frontmatter th {
+  width: 1%;
+  white-space: nowrap;
+  color: var(--fg-dim);
+  font-weight: 600;
+}
+.om-frontmatter-raw {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--bg-pane-alt) 50%, transparent);
+  color: var(--fg-dim);
+  overflow-x: auto;
+}
+
 /* Status bar */
 .status-bar {
   display: flex;

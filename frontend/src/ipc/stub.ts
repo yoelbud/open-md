@@ -191,6 +191,39 @@ const blockKindFromLine = (line: string): BlockKind => {
   return "paragraph";
 };
 
+/** Detect YAML front matter at the very start of a source string. */
+const detectFrontMatter = (source: string): number | null => {
+  if (!source.startsWith("---\n") && !source.startsWith("---\r\n")) return null;
+  const newlineLen = source.startsWith("---\r\n") ? 5 : 4;
+  const body = source.slice(newlineLen);
+  const lines = body.split(/\n/);
+  let offset = newlineLen;
+  for (const line of lines) {
+    const trimmed = line.replace(/\r$/, "");
+    if (trimmed === "---") {
+      return offset + line.length + 1;
+    }
+    offset += line.length + 1;
+  }
+  return null;
+};
+
+/** Parse simple key: value pairs from front matter source. */
+const parseFrontMatterFields = (source: string): [string, string][] => {
+  const fields: [string, string][] = [];
+  const lines = source.split(/\r?\n/);
+  // Skip opening/closing fences.
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === "---" || trimmed === "" || trimmed.startsWith("#")) continue;
+    const colon = trimmed.indexOf(":");
+    if (colon > 0) {
+      fields.push([trimmed.slice(0, colon).trim(), trimmed.slice(colon + 1).trim()]);
+    }
+  }
+  return fields;
+};
+
 // Very small inline renderer for the M0 demo (bold/italic/code/link only).
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -262,6 +295,12 @@ const previewMetaForBlock = (kind: BlockKind, source: string): BlockPreviewMeta 
 const renderBlock = (kind: BlockKind, source: string, marks: string[] = []): string => {
   const trimmed = source.trimEnd();
   switch (kind) {
+    case "front_matter": {
+      const fields = parseFrontMatterFields(trimmed);
+      if (fields.length === 0) return `<div class="om-frontmatter"><em>(empty metadata)</em></div>`;
+      const rows = fields.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join("");
+      return `<div class="om-frontmatter"><table>\n${rows}\n</table></div>`;
+    }
     case "heading": {
       const m = /^(#{1,6})\s+(.*)$/m.exec(trimmed);
       if (!m) return `<p>${renderInline(trimmed, marks)}</p>`;
@@ -330,6 +369,8 @@ const renderBlock = (kind: BlockKind, source: string, marks: string[] = []): str
 const renderBlockPlain = (kind: BlockKind, source: string): string => {
   const trimmed = source.trimEnd();
   switch (kind) {
+    case "front_matter":
+      return `<pre class="om-frontmatter-raw"><code>${escapeHtml(trimmed)}</code></pre>`;
     case "heading": {
       const m = /^(#{1,6})\s+(.*)$/m.exec(trimmed);
       if (!m) return `<p>${renderInline(trimmed)}</p>`;
@@ -399,9 +440,29 @@ export const parseDocument = (
 ): DocumentPayload => {
   // Split on blank lines, preserving fenced code blocks as one unit.
   const blocks: Block[] = [];
-  const lines = source.split(/\r?\n/);
+
+  // Detect front matter at byte 0 before the main segmentation loop.
+  let mainStart = 0;
+  const fmEnd = detectFrontMatter(source);
+  if (fmEnd !== null) {
+    const fmSlice = source.slice(0, fmEnd);
+    const hash = hashStr(fmSlice);
+    blocks.push({
+      id: `b${hash.toString(16).padStart(8, "0")}-0`,
+      kind: "front_matter",
+      src_range: [0, fmEnd],
+      hash,
+      source: fmSlice,
+      html: renderBlock("front_matter", fmSlice),
+      plain_html: renderBlockPlain("front_matter", fmSlice),
+    });
+    mainStart = fmEnd;
+  }
+
+  const mainSource = source.slice(mainStart);
+  const lines = mainSource.split(/\r?\n/);
   let i = 0;
-  let offset = 0;
+  let offset = mainStart;
 
   while (i < lines.length) {
     // Skip blank lines.

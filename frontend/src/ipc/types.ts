@@ -9,6 +9,7 @@ export type BlockKind =
   | "table"
   | "block_quote"
   | "callout"
+  | "front_matter"
   | "thematic_break"
   | "html"
   | "task_list"

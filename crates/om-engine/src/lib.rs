@@ -139,4 +139,17 @@ mod tests {
             .contains("<mark class=\"om-mark\">important</mark>"));
         assert!(!payload.blocks[0].plain_html.contains("<mark"));
     }
+
+    #[test]
+    fn front_matter_yields_first_block_with_metadata_html() {
+        let src = "---\ntitle: Hello World\nauthor: Jane\n---\n\n# Heading\n";
+        let payload = render_document_payload(src, "doc.md");
+
+        assert_eq!(payload.blocks[0].kind, BlockKind::FrontMatter);
+        assert_eq!(payload.blocks[0].src_range, (0, 40));
+        assert!(payload.blocks[0].html.contains("om-frontmatter"));
+        assert!(payload.blocks[0].html.contains("Hello World"));
+        assert!(payload.blocks[0].plain_html.contains("om-frontmatter-raw"));
+        assert_eq!(payload.blocks[1].kind, BlockKind::Heading);
+    }
 }

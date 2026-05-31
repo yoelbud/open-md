@@ -855,6 +855,8 @@ export type BlockTemplate = {
 };
 
 export const BLOCK_TEMPLATES: BlockTemplate[] = [
+  { id: "frontmatter", label: "Front matter", icon: "⚙",
+    snippet: "---\ntitle: \ndate: \n---\n\n", caret: 14 },
   { id: "h1", label: "Heading 1", icon: "H1", snippet: "# Heading\n\n", caret: 2 },
   { id: "h2", label: "Heading 2", icon: "H2", snippet: "## Heading\n\n", caret: 3 },
   { id: "h3", label: "Heading 3", icon: "H3", snippet: "### Heading\n\n", caret: 4 },

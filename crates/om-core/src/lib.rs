@@ -16,6 +16,7 @@
 
 pub mod annotation;
 pub mod callout;
+pub mod frontmatter;
 pub mod image;
 pub mod ir;
 pub mod segment;

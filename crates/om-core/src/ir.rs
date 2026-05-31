@@ -28,6 +28,8 @@ pub enum BlockKind {
     BlockQuote,
     /// Callout / admonition (GitHub `[!NOTE]` style alert block quote).
     Callout,
+    /// YAML front matter (`---` fenced metadata at byte 0).
+    FrontMatter,
     /// Horizontal rule (`---`, `***`, `___`).
     ThematicBreak,
     /// Raw HTML block.

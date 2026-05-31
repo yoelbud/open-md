@@ -18,9 +18,11 @@
 #![deny(missing_docs)]
 
 use std::borrow::Cow;
+use std::fmt::Write;
 
 use om_core::{
     callout::{parse_callout, Callout},
+    frontmatter::parse_front_matter,
     image::{parse_image_at, parse_image_block, ParsedImage},
     Block, BlockKind, Document, MarkRange,
 };
@@ -79,6 +81,9 @@ fn render_block_rich(block: &Block, ranges: &[MarkRange]) -> String {
         return render_mermaid_diagram(&diagram);
     }
     match block.kind {
+        BlockKind::FrontMatter => {
+            return render_front_matter_rich(&block.source);
+        }
         BlockKind::Image => {
             if let Some(image) = parse_image_block(&block.source) {
                 return render_image_block(&image);
@@ -110,6 +115,9 @@ fn render_block_rich(block: &Block, ranges: &[MarkRange]) -> String {
 /// annotation overlay. This is the "regular Markdown preview" and the source
 /// for raw PDF export.
 fn render_block_plain(block: &Block) -> String {
+    if block.kind == BlockKind::FrontMatter {
+        return render_front_matter_plain(&block.source);
+    }
     if block.kind == BlockKind::Image {
         if let Some(image) = parse_image_block(&block.source) {
             return format!(
@@ -470,6 +478,37 @@ fn render_mermaid_diagram(source: &str) -> String {
     format!(
         "<pre class=\"mermaid\" data-om-mermaid>{}</pre>\n",
         escape_html(source)
+    )
+}
+
+/// Rich rendering of front matter: a styled metadata panel with key/value rows.
+fn render_front_matter_rich(source: &str) -> String {
+    if let Some(fm) = parse_front_matter(source) {
+        if fm.fields.is_empty() {
+            return "<div class=\"om-frontmatter\"><em>(empty metadata)</em></div>\n".to_string();
+        }
+        let mut html = String::from("<div class=\"om-frontmatter\"><table>\n");
+        for (key, value) in &fm.fields {
+            let _ = writeln!(
+                html,
+                "<tr><th>{}</th><td>{}</td></tr>",
+                escape_html(key),
+                escape_html(value),
+            );
+        }
+        html.push_str("</table></div>\n");
+        html
+    } else {
+        // Fallback: render raw source as preformatted.
+        render_front_matter_plain(source)
+    }
+}
+
+/// Plain rendering of front matter: a preformatted code block.
+fn render_front_matter_plain(source: &str) -> String {
+    format!(
+        "<pre class=\"om-frontmatter-raw\"><code>{}</code></pre>\n",
+        escape_html(source.trim())
     )
 }
 
