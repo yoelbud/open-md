@@ -31,6 +31,18 @@ import {
   useVisiblePanes,
   usePath,
   usePreviewSettings,
+  usePreviewMode,
+  setPreviewMode,
+  setAnnotations,
+  useAnnotations,
+  toggleHighlight,
+  setForeground,
+  setBackground,
+  clearMarks,
+  removeBlockRange,
+  rangesForBlockIndex,
+  serializeProject,
+  parseProjectJson,
   useSetSource,
   useSource,
 } from "../src/store/document";
@@ -207,5 +219,98 @@ describe("document store", () => {
 
     expect(usePreviewSettings()().fontSizePx).toBe(28);
     expect(usePreviewSettings()().lineHeight).toBe(2.2);
+  });
+
+  it("renders both rich and plain HTML per block", () => {
+    setSource("> [!NOTE]\n> tidy\n");
+    const block = useDocument().blocks[0]!;
+    expect(block.html).toContain("om-callout");
+    expect(block.plain_html).toContain("<blockquote>");
+    expect(block.plain_html).not.toContain("om-callout");
+  });
+
+  it("overlays IR annotations only in rich HTML", () => {
+    setSource("the important bit\n");
+    setAnnotations({
+      blocks: [{ index: 0, ranges: [{ start: 4, end: 13, marks: ["highlight"] }] }],
+    });
+    const block = useDocument().blocks[0]!;
+    expect(block.html).toContain('<mark class="om-mark">important</mark>');
+    expect(block.plain_html).not.toContain("om-mark");
+  });
+
+  it("toggles preview mode between rich and markdown", () => {
+    expect(usePreviewMode()()).toBe("rich");
+    setPreviewMode("markdown");
+    expect(usePreviewMode()()).toBe("markdown");
+    setPreviewMode("rich");
+  });
+
+  it("serializes and round-trips a .ommd project with a clean body", () => {
+    setSource("clean body\n");
+    setAnnotations({
+      blocks: [{ index: 0, ranges: [{ start: 0, end: 5, marks: ["fg-red"] }] }],
+    });
+    const json = serializeProject();
+    // The serialized body is plain Markdown — no IR-only tokens.
+    expect(json).not.toContain("==");
+    expect(json).not.toContain("{.fg");
+
+    const project = parseProjectJson(json);
+    expect(project.format).toBe("open-md-project");
+    expect(project.body).toBe("clean body\n");
+    expect(project.annotations.blocks[0]!.ranges[0]!.marks).toEqual(["fg-red"]);
+  });
+
+  it("rejects a project file without a body", () => {
+    expect(() => parseProjectJson("{}")).toThrow();
+  });
+
+  it("applies highlight and color marks to a block span via the IR API", () => {
+    setSource("colorful words here\n");
+    setAnnotations({ blocks: [] });
+
+    toggleHighlight(0, 0, 8);
+    setForeground(0, 0, 8, "red");
+
+    const ranges = rangesForBlockIndex(0);
+    expect(ranges).toHaveLength(1);
+    expect(ranges[0]!.start).toBe(0);
+    expect(ranges[0]!.end).toBe(8);
+    expect(new Set(ranges[0]!.marks)).toEqual(new Set(["highlight", "fg-red"]));
+
+    // The applied marks surface in the rich HTML, never the plain HTML.
+    const block = useDocument().blocks[0]!;
+    expect(block.html).toContain("om-mark");
+    expect(block.html).toContain("om-fg-red");
+    expect(block.plain_html).not.toContain("om-mark");
+  });
+
+  it("replaces same-prefix colors instead of stacking them", () => {
+    setSource("recolor me\n");
+    setAnnotations({ blocks: [] });
+
+    setForeground(0, 0, 7, "red");
+    setForeground(0, 0, 7, "blue");
+
+    const marks = rangesForBlockIndex(0)[0]!.marks;
+    expect(marks).toContain("fg-blue");
+    expect(marks).not.toContain("fg-red");
+  });
+
+  it("clearMarks and removeBlockRange drop annotations", () => {
+    setSource("temporary marks\n");
+    setAnnotations({ blocks: [] });
+
+    setBackground(0, 0, 9, "green");
+    expect(rangesForBlockIndex(0)).toHaveLength(1);
+
+    clearMarks(0, 0, 9);
+    expect(rangesForBlockIndex(0)).toHaveLength(0);
+
+    setForeground(0, 0, 9, "teal");
+    removeBlockRange(0, 0);
+    expect(rangesForBlockIndex(0)).toHaveLength(0);
+    expect(useAnnotations()().blocks).toHaveLength(0);
   });
 });

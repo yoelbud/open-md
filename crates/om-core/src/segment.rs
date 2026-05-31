@@ -8,6 +8,7 @@
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use xxhash_rust::xxh3::xxh3_64;
 
+use crate::callout::is_callout;
 use crate::image::parse_image_block;
 use crate::ir::{Block, BlockKind, Document};
 
@@ -93,10 +94,10 @@ pub fn segment(source: &str) -> Document {
 
 fn push_block(out: &mut Vec<Block>, source: &str, start: usize, end: usize, kind: BlockKind) {
     let slice = &source[start..end];
-    let kind = if kind == BlockKind::Paragraph && parse_image_block(slice).is_some() {
-        BlockKind::Image
-    } else {
-        kind
+    let kind = match kind {
+        BlockKind::Paragraph if parse_image_block(slice).is_some() => BlockKind::Image,
+        BlockKind::BlockQuote if is_callout(slice) => BlockKind::Callout,
+        other => other,
     };
     let hash = xxh3_64(slice.as_bytes());
     let id = format!("b{:016x}-{}", hash, out.len());
@@ -183,5 +184,32 @@ mod tests {
         let doc = segment("![cat](https://x/y.png =300x200){.center}\n");
 
         assert_eq!(doc.blocks[0].kind, BlockKind::Image);
+    }
+
+    #[test]
+    fn alert_block_quote_emits_callout_kind() {
+        let doc = segment("> [!NOTE]\n> Heads up.\n");
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::Callout);
+    }
+
+    #[test]
+    fn plain_block_quote_stays_block_quote() {
+        let doc = segment("> just a quote\n");
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::BlockQuote);
+    }
+
+    #[test]
+    fn callout_src_range_slices_back_to_source() {
+        let src = "intro\n\n> [!TIP]\n> Be tidy.\n";
+        let doc = segment(src);
+        let callout = doc
+            .blocks
+            .iter()
+            .find(|b| b.kind == BlockKind::Callout)
+            .expect("callout block");
+        let (s, e) = callout.src_range;
+        assert_eq!(&src[s..e], callout.source);
     }
 }

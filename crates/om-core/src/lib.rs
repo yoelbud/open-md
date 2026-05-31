@@ -14,9 +14,12 @@
 //! assert_eq!(doc.blocks[1].kind, BlockKind::Paragraph);
 //! ```
 
+pub mod annotation;
+pub mod callout;
 pub mod image;
 pub mod ir;
 pub mod segment;
 
+pub use annotation::{Annotations, BlockAnnotation, MarkRange};
 pub use ir::{Block, BlockKind, Document};
 pub use segment::segment;
