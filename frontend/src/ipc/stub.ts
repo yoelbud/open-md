@@ -356,7 +356,14 @@ const renderInline = (s: string, extra: string[] = []): string => {
     placeholders.push(tag);
     return `${PH_OPEN}${placeholders.length - 1}${PH_CLOSE}`;
   });
-  return applyInlineMarks(escapeHtml(withImgs)
+  // Footnote references: [^id] → <sup class="om-fnref" ...> (not [^id]:)
+  const withFnRefs = withImgs.replace(/\[\^([^\]\s]+)\](?!:)/g, (_m, id) => {
+    const escaped = escapeAttr(id);
+    const tag = `<sup class="om-fnref" data-om-fnref="${escaped}"><a href="#fn-${escaped}">${escapeHtml(id)}</a></sup>`;
+    placeholders.push(tag);
+    return `${PH_OPEN}${placeholders.length - 1}${PH_CLOSE}`;
+  });
+  return applyInlineMarks(escapeHtml(withFnRefs)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
@@ -402,6 +409,22 @@ const parseDisplayMath = (source: string): string | null => {
   if (!trimmed.startsWith("$$") || !trimmed.endsWith("$$")) return null;
   const inner = trimmed.slice(2, -2).trim();
   return inner.length > 0 ? inner : null;
+};
+
+type FootnoteDef = { id: string; body: string };
+
+/** Parse a footnote definition block `[^id]: body text`. */
+const parseFootnoteDefinition = (source: string): FootnoteDef | null => {
+  const match = /^\[\^([^\]\s]+)\]:\s*(.*)$/s.exec(source);
+  if (!match) return null;
+  return { id: match[1]!, body: match[2]!.trim() };
+};
+
+/** Render a footnote definition to om-fndef HTML. */
+const renderFootnoteDefinition = (def: FootnoteDef): string => {
+  const id = escapeAttr(def.id);
+  const body = renderInline(def.body);
+  return `<div class="om-fndef" id="fn-${id}" data-om-fndef="${id}"><span class="om-fndef-label">${escapeHtml(def.id)}.</span> <span class="om-fndef-body">${body}</span></div>`;
 };
 
 const previewMetaForBlock = (kind: BlockKind, source: string): BlockPreviewMeta | undefined => {
@@ -480,6 +503,11 @@ const renderBlock = (kind: BlockKind, source: string, marks: string[] = []): str
       const alignClass = img.align ? ` om-img-${img.align}` : "";
       return `<div class="om-img-wrap${alignClass}">${renderImgTag(img)}</div>`;
     }
+    case "paragraph": {
+      const fnDef = parseFootnoteDefinition(trimmed);
+      if (fnDef) return renderFootnoteDefinition(fnDef);
+      return `<p>${renderInline(trimmed, marks)}</p>`;
+    }
     default:
       return `<p>${renderInline(trimmed, marks)}</p>`;
   }
@@ -536,6 +564,11 @@ const renderBlockPlain = (kind: BlockKind, source: string): string => {
       return `<p><img src="${escapeAttr(img.src)}" data-om-src="${escapeAttr(
         img.src,
       )}" alt="${escapeAttr(img.alt)}"/></p>`;
+    }
+    case "paragraph": {
+      const fnDef = parseFootnoteDefinition(trimmed);
+      if (fnDef) return renderFootnoteDefinition(fnDef);
+      return `<p>${renderInline(trimmed)}</p>`;
     }
     default:
       return `<p>${renderInline(trimmed)}</p>`;

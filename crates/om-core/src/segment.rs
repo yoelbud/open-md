@@ -25,7 +25,7 @@ const fn opts() -> Options {
 const fn kind_for_tag(tag: &Tag<'_>) -> Option<BlockKind> {
     Some(match tag {
         Tag::Heading { .. } => BlockKind::Heading,
-        Tag::Paragraph => BlockKind::Paragraph,
+        Tag::Paragraph | Tag::FootnoteDefinition(_) => BlockKind::Paragraph,
         Tag::List(_) => BlockKind::List,
         Tag::CodeBlock(_) => BlockKind::Code,
         Tag::Table(_) => BlockKind::Table,
@@ -78,7 +78,8 @@ pub fn segment(source: &str) -> Document {
                 | TagEnd::CodeBlock
                 | TagEnd::Table
                 | TagEnd::BlockQuote(_)
-                | TagEnd::HtmlBlock,
+                | TagEnd::HtmlBlock
+                | TagEnd::FootnoteDefinition,
             ) => {
                 depth -= 1;
                 if depth == 0 {

@@ -179,6 +179,68 @@ fn render_markdown_fragment(source: &str, skip_inline: bool) -> String {
     if !skip_inline {
         out = apply_inline_marks(&out);
     }
+    out = rewrite_footnote_html(&out);
+    out
+}
+
+/// Rewrite `pulldown_cmark`'s default footnote HTML classes to open-md's
+/// `om-fnref` / `om-fndef` classes with `data-om-fnref` / `data-om-fndef`
+/// attributes for hover-preview lookups.
+fn rewrite_footnote_html(html: &str) -> String {
+    const REF_MARKER: &str = "<sup class=\"footnote-reference\"><a href=\"#";
+    const DEF_MARKER: &str = "<div class=\"footnote-definition\" id=\"";
+
+    if !html.contains("footnote-") {
+        return html.to_string();
+    }
+
+    let mut out = String::with_capacity(html.len());
+    let mut pos = 0;
+
+    while pos < html.len() {
+        if html[pos..].starts_with(REF_MARKER) {
+            // <sup class="footnote-reference"><a href="#ID">LABEL</a></sup>
+            let after_marker = pos + REF_MARKER.len();
+            if let Some(quote_end) = html[after_marker..].find('"') {
+                let id = &html[after_marker..after_marker + quote_end];
+                // Find >LABEL</a></sup>
+                let a_start = after_marker + quote_end + 2; // skip `">`
+                if let Some(a_close) = html[a_start..].find("</a></sup>") {
+                    let label = &html[a_start..a_start + a_close];
+                    let _ = write!(
+                        out,
+                        "<sup class=\"om-fnref\" data-om-fnref=\"{id}\"><a href=\"#fn-{id}\">{label}</a></sup>"
+                    );
+                    pos = a_start + a_close + "</a></sup>".len();
+                    continue;
+                }
+            }
+        } else if html[pos..].starts_with(DEF_MARKER) {
+            // <div class="footnote-definition" id="ID"><sup class="footnote-definition-label">LABEL</sup>
+            let after_marker = pos + DEF_MARKER.len();
+            if let Some(quote_end) = html[after_marker..].find('"') {
+                let id = &html[after_marker..after_marker + quote_end];
+                let sup_marker = "<sup class=\"footnote-definition-label\">";
+                let after_id_close = after_marker + quote_end + 2; // skip `">`
+                if html[after_id_close..].starts_with(sup_marker) {
+                    let label_start = after_id_close + sup_marker.len();
+                    if let Some(sup_close) = html[label_start..].find("</sup>") {
+                        let label = &html[label_start..label_start + sup_close];
+                        let _ = write!(
+                            out,
+                            "<div class=\"om-fndef\" id=\"fn-{id}\" data-om-fndef=\"{id}\"><span class=\"om-fndef-label\">{label}.</span> "
+                        );
+                        pos = label_start + sup_close + "</sup>".len();
+                        continue;
+                    }
+                }
+            }
+        }
+
+        out.push(html.as_bytes()[pos] as char);
+        pos += 1;
+    }
+
     out
 }
 
@@ -384,6 +446,23 @@ fn transform_inline(source: &str) -> Cow<'_, str> {
             }
         }
 
+        // Footnote reference: [^id] → <sup class="om-fnref" ...>
+        // Must be handled before pulldown_cmark because per-block rendering
+        // lacks the definition context needed for pulldown_cmark to recognise it.
+        if rest.starts_with("[^") {
+            if let Some(end) = parse_footnote_ref(rest) {
+                let id = &rest[2..end - 1]; // between [^ and ]
+                let _ = write!(
+                    out,
+                    "<sup class=\"om-fnref\" data-om-fnref=\"{id}\"><a href=\"#fn-{id}\">{id}</a></sup>",
+                    id = escape_html(id),
+                );
+                i += end;
+                changed = true;
+                continue;
+            }
+        }
+
         // Single-tilde subscript: ~text~ → <sub>text</sub>
         // Must handle BEFORE pulldown_cmark which would treat it as strikethrough.
         // Only match single ~ not preceded/followed by another ~.
@@ -439,6 +518,31 @@ fn find_backtick_close(rest: &str, len: usize) -> Option<usize> {
         }
     }
     None
+}
+
+/// Parse a footnote reference `[^id]`, returning the byte length consumed
+/// (including the closing `]`). Returns `None` when `rest` doesn't start with
+/// a valid footnote reference. The id must be non-empty and contain no `]`.
+/// Does NOT match footnote definitions (`[^id]:` at line start).
+fn parse_footnote_ref(rest: &str) -> Option<usize> {
+    if !rest.starts_with("[^") {
+        return None;
+    }
+    let close = rest[2..].find(']')?;
+    if close == 0 {
+        return None; // empty id
+    }
+    // id must not contain spaces or newlines (conservative)
+    let id = &rest[2..2 + close];
+    if id.contains(' ') || id.contains('\n') {
+        return None;
+    }
+    let consumed = 2 + close + 1; // [^ + id + ]
+                                  // If followed by `:` this is a definition, not a reference.
+    if rest[consumed..].starts_with(':') {
+        return None;
+    }
+    Some(consumed)
 }
 
 /// Splice annotation open/close markers into `source` at the character offsets
@@ -1065,5 +1169,37 @@ mod tests {
         let html = apply_inline_marks("<pre><code>~x~ ^y^</code></pre>");
         assert!(!html.contains("<sub>"));
         assert!(!html.contains("<sup>"));
+    }
+
+    // ─── Footnotes ──────────────────────────────────────────────────────
+
+    #[test]
+    fn renders_footnote_reference_with_om_classes() {
+        let doc = segment("Hello[^1] world.\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("class=\"om-fnref\""));
+        assert!(html.contains("data-om-fnref=\"1\""));
+        assert!(html.contains("href=\"#fn-1\""));
+        assert!(html.contains(">1</a>"));
+    }
+
+    #[test]
+    fn renders_footnote_definition_with_om_classes() {
+        let doc = segment("[^1]: This is a footnote.\n");
+        assert!(!doc.blocks.is_empty(), "definition must be segmented");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("class=\"om-fndef\""));
+        assert!(html.contains("id=\"fn-1\""));
+        assert!(html.contains("data-om-fndef=\"1\""));
+        assert!(html.contains("om-fndef-label"));
+        assert!(html.contains("This is a footnote."));
+    }
+
+    #[test]
+    fn footnote_definition_segmented_as_paragraph() {
+        let doc = segment("Hello[^note] world.\n\n[^note]: Detailed note.\n");
+        assert_eq!(doc.blocks.len(), 2);
+        assert_eq!(doc.blocks[0].kind, BlockKind::Paragraph);
+        assert_eq!(doc.blocks[1].kind, BlockKind::Paragraph);
     }
 }

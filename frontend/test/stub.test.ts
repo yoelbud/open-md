@@ -267,4 +267,31 @@ describe("parseDocument", () => {
     const html = parseDocument("a ~~b~~ c\n").blocks[0]!.html;
     expect(html).toContain("<del>b</del>");
   });
+
+  it("renders footnote reference with om-fnref attributes", () => {
+    const doc = parseDocument("Hello[^1] world.\n");
+    const html = doc.blocks[0]!.html;
+    expect(html).toContain('class="om-fnref"');
+    expect(html).toContain('data-om-fnref="1"');
+    expect(html).toContain('href="#fn-1"');
+    expect(html).toContain(">1</a>");
+  });
+
+  it("renders footnote definition with om-fndef attributes", () => {
+    const doc = parseDocument("[^1]: This is a footnote.\n");
+    const block = doc.blocks[0]!;
+    expect(block.kind).toBe("paragraph");
+    expect(block.html).toContain('class="om-fndef"');
+    expect(block.html).toContain('id="fn-1"');
+    expect(block.html).toContain('data-om-fndef="1"');
+    expect(block.html).toContain("om-fndef-label");
+    expect(block.html).toContain("This is a footnote.");
+  });
+
+  it("renders footnote definition in plain mode", () => {
+    const doc = parseDocument("[^note]: A note body.\n");
+    const block = doc.blocks[0]!;
+    expect(block.plain_html).toContain('data-om-fndef="note"');
+    expect(block.plain_html).toContain("A note body.");
+  });
 });

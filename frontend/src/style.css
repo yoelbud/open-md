@@ -2020,3 +2020,50 @@ html, body, #root {
   object-fit: contain;
   border-radius: 4px;
 }
+
+/* ─── Footnotes ─────────────────────────────────────────────────────── */
+.om-fnref {
+  font-size: 0.75em;
+  vertical-align: super;
+  line-height: 0;
+}
+.om-fnref a {
+  color: var(--accent);
+  text-decoration: none;
+  padding: 0 0.1em;
+}
+.om-fnref a:hover {
+  text-decoration: underline;
+}
+.om-fndef {
+  font-size: 0.88rem;
+  color: var(--fg-dim);
+  padding: 0.3rem 0.6rem;
+  margin: 0.3rem 0;
+  border-left: 3px solid var(--border);
+  border-radius: 2px;
+}
+.om-fndef-label {
+  font-weight: 600;
+  color: var(--fg);
+  margin-right: 0.3em;
+}
+.om-fn-tooltip {
+  position: absolute;
+  z-index: 1000;
+  max-width: 280px;
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-pane-alt);
+  color: var(--fg);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.om-fn-tooltip.visible {
+  opacity: 1;
+}

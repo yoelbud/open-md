@@ -1,4 +1,4 @@
-import { createEffect, createSignal, Index, Show } from "solid-js";
+import { createEffect, createSignal, Index, onCleanup, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import {
   appendImageBlock,
@@ -27,6 +27,7 @@ import { ImageBlockView } from "./ImageBlockView";
 import { TableBlockView } from "./TableBlockView";
 import { extractHeadings, isTocToken, renderTocHtml } from "../../store/outline";
 import { splitInlineMath } from "../../store/mathInline";
+import { setupFootnoteTooltip } from "./footnotes";
 import "katex/dist/katex.min.css";
 
 const FONT_OPTIONS: { id: PreviewFontFamily; label: string }[] = [
@@ -545,6 +546,14 @@ export const PreviewPane = (props: PaneProps) => {
   const doc = useDocument;
   const settings = usePreviewSettings();
   const [dragOver, setDragOver] = createSignal(false);
+  let previewBodyRef: HTMLDivElement | undefined;
+
+  // Set up footnote hover-preview tooltip on the preview container.
+  createEffect(() => {
+    if (!previewBodyRef) return;
+    const cleanup = setupFootnoteTooltip(previewBodyRef);
+    onCleanup(cleanup);
+  });
 
   const previewStyle = () => ({
     "--preview-font-family": PREVIEW_FONT_CSS[settings().fontFamily],
@@ -643,6 +652,7 @@ export const PreviewPane = (props: PaneProps) => {
       </div>
       <PreviewToolbar />
       <div
+        ref={previewBodyRef}
         class="pane-body preview"
         classList={{ "drop-target": dragOver() }}
         style={previewStyle()}
