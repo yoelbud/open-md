@@ -200,4 +200,71 @@ describe("parseDocument", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
+
+  it("classifies alert block quotes as callouts", () => {
+    const doc = parseDocument("> [!NOTE]\n> Heads up.\n");
+    expect(doc.blocks[0]!.kind).toBe("callout");
+    expect(doc.blocks[0]!.html).toContain("om-callout om-callout-note");
+    expect(doc.blocks[0]!.html).toContain('data-callout="note"');
+    expect(doc.blocks[0]!.html).toContain("Heads up.");
+  });
+
+  it("supports custom callout titles and keeps plain quotes as quotes", () => {
+    const callout = parseDocument("> [!warning] Careful\n> body\n").blocks[0]!;
+    expect(callout.kind).toBe("callout");
+    expect(callout.html).toContain("om-callout-warning");
+    expect(callout.html).toContain("Careful");
+
+    const quote = parseDocument("> just a quote\n").blocks[0]!;
+    expect(quote.kind).toBe("block_quote");
+  });
+
+  it("overlays IR annotations as highlight and color spans in rich html", () => {
+    const doc = parseDocument("a hi and red and badge\n", "notes.md", {
+      blocks: [
+        {
+          index: 0,
+          ranges: [
+            { start: 2, end: 4, marks: ["highlight"] },
+            { start: 9, end: 12, marks: ["fg-red"] },
+            { start: 17, end: 22, marks: ["fg-white", "bg-blue"] },
+          ],
+        },
+      ],
+    });
+    const html = doc.blocks[0]!.html;
+    expect(html).toContain('<mark class="om-mark">hi</mark>');
+    expect(html).toContain('<span class="om-fg-red">red</span>');
+    expect(html).toContain('<span class="om-fg-white om-bg-blue">badge</span>');
+    // The plain HTML never carries the overlay.
+    expect(doc.blocks[0]!.plain_html).not.toContain("om-mark");
+    expect(doc.blocks[0]!.plain_html).not.toContain("om-fg-red");
+  });
+
+  it("keeps the Markdown body clean of non-standard rich tokens", () => {
+    const doc = parseDocument("a ==hi== and [red]{.fg-red}\n");
+    // No source-level highlight/color syntax: the literal text passes through.
+    expect(doc.blocks[0]!.html).toContain("==hi==");
+    expect(doc.blocks[0]!.html).toContain("[red]{.fg-red}");
+    expect(doc.blocks[0]!.html).not.toContain("<mark");
+    expect(doc.blocks[0]!.html).not.toContain("<span");
+  });
+
+  it("adds a language label to fenced code blocks", () => {
+    const html = parseDocument("```rust\nfn main() {}\n```\n").blocks[0]!.html;
+    expect(html).toContain('class="om-code"');
+    expect(html).toContain('data-lang="rust"');
+    expect(html).toContain("<figcaption>rust</figcaption>");
+  });
+
+  it("omits code chrome for unlabeled fences", () => {
+    const html = parseDocument("```\nplain\n```\n").blocks[0]!.html;
+    expect(html).not.toContain("om-code");
+    expect(html).toContain("<pre><code>");
+  });
+
+  it("renders strikethrough", () => {
+    const html = parseDocument("a ~~b~~ c\n").blocks[0]!.html;
+    expect(html).toContain("<del>b</del>");
+  });
 });

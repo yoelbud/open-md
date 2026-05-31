@@ -1,0 +1,49 @@
+---
+source: crates/om-render/tests/fixture_snapshot.rs
+expression: rendered
+snapshot_kind: text
+---
+- - Heading
+  - "<h1>Showcase</h1>\n"
+- - Paragraph
+  - "<p>A paragraph with <strong>bold</strong>, <em>italic</em>, <del>strikethrough</del>, <code>inline code</code>,\nand a <a href=\"https://example.com\">link</a>.</p>\n"
+- - Heading
+  - "<h2>Lists</h2>\n"
+- - List
+  - "<ul>\n<li>bullet one</li>\n<li>bullet two</li>\n</ul>\n"
+- - List
+  - "<ol>\n<li>first</li>\n<li>second</li>\n</ol>\n"
+- - TaskList
+  - "<ul>\n<li><input disabled=\"\" type=\"checkbox\" checked=\"\"/>\ndone</li>\n<li><input disabled=\"\" type=\"checkbox\"/>\ntodo</li>\n</ul>\n"
+- - Heading
+  - "<h2>Table</h2>\n"
+- - Table
+  - "<table><thead><tr><th style=\"text-align: left\">left</th><th style=\"text-align: center\">center</th><th style=\"text-align: right\">right</th></tr></thead><tbody>\n<tr><td style=\"text-align: left\">a</td><td style=\"text-align: center\">b</td><td style=\"text-align: right\">c</td></tr>\n</tbody></table>\n"
+- - Heading
+  - "<h2>Code</h2>\n"
+- - Code
+  - "<figure class=\"om-code\" data-lang=\"rust\"><figcaption>rust</figcaption><pre><code class=\"language-rust\">fn main() {\n    println!(\"hello, open-md\");\n}\n</code></pre>\n</figure>\n"
+- - Heading
+  - "<h2>Diagram</h2>\n"
+- - Code
+  - "<pre class=\"mermaid\" data-om-mermaid>graph TD\n  A --&gt; B\n</pre>\n"
+- - Heading
+  - "<h2>Callouts</h2>\n"
+- - Callout
+  - "<div class=\"om-callout om-callout-note\" data-callout=\"note\"><div class=\"om-callout-title\"><span class=\"om-callout-icon\" aria-hidden=\"true\"></span>Note</div><div class=\"om-callout-body\"><p>Neutral information worth noticing.</p>\n</div></div>\n"
+- - Callout
+  - "<div class=\"om-callout om-callout-tip\" data-callout=\"tip\"><div class=\"om-callout-title\"><span class=\"om-callout-icon\" aria-hidden=\"true\"></span>Pro tip</div><div class=\"om-callout-body\"><p>You can give callouts a custom title.</p>\n</div></div>\n"
+- - Callout
+  - "<div class=\"om-callout om-callout-important\" data-callout=\"important\"><div class=\"om-callout-title\"><span class=\"om-callout-icon\" aria-hidden=\"true\"></span>Important</div><div class=\"om-callout-body\"><p>Crucial detail with <strong>emphasis</strong>.</p>\n</div></div>\n"
+- - Callout
+  - "<div class=\"om-callout om-callout-warning\" data-callout=\"warning\"><div class=\"om-callout-title\"><span class=\"om-callout-icon\" aria-hidden=\"true\"></span>Warning</div><div class=\"om-callout-body\"><p>Watch out for this.</p>\n</div></div>\n"
+- - Callout
+  - "<div class=\"om-callout om-callout-caution\" data-callout=\"caution\"><div class=\"om-callout-title\"><span class=\"om-callout-icon\" aria-hidden=\"true\"></span>Caution</div><div class=\"om-callout-body\"><p>This action has consequences.</p>\n</div></div>\n"
+- - Heading
+  - "<h2>Quote</h2>\n"
+- - BlockQuote
+  - "<blockquote>\n<p>A plain block quote stays a block quote.</p>\n</blockquote>\n"
+- - ThematicBreak
+  - "<hr />\n"
+- - Image
+  - "<div class=\"om-img-wrap om-img-center\"><img src=\"https://example.com/img.png\" data-om-src=\"https://example.com/img.png\" alt=\"diagram\" style=\"max-width:100%\" loading=\"lazy\" draggable=\"false\"/></div>"

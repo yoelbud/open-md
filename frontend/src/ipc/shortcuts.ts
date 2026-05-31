@@ -8,7 +8,7 @@ import {
   newDocument,
   openFile,
   redo,
-  saveFile,
+  saveProject,
   togglePane,
   undo,
 } from "../store/document";
@@ -35,7 +35,7 @@ export const registerShortcuts = () => {
         break;
       case "s":
         e.preventDefault();
-        void saveFile();
+        void saveProject();
         break;
       case "z":
         e.preventDefault();

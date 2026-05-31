@@ -1,11 +1,15 @@
-import type { Block, DocumentPayload } from "./types";
+import type { Annotations, Block, DocumentPayload } from "./types";
 import { parseDocument as parseDocumentStub } from "./stub";
 import { parseMarkdownTable } from "../markdown/table";
 import { resolveAssetSrc } from "../store/assets";
 
 const UNTITLED_PATH = "(untitled).md";
 
-type ParseDocument = (source: string, path?: string) => DocumentPayload;
+type ParseDocument = (
+  source: string,
+  path?: string,
+  annotations?: Annotations,
+) => DocumentPayload;
 
 let parseImpl: ParseDocument = parseDocumentStub;
 let runtimeName = "typescript-stub";
@@ -25,7 +29,8 @@ const isBlock = (value: unknown): value is Block => {
     isNumberPair(block.src_range) &&
     typeof block.hash === "number" &&
     typeof block.source === "string" &&
-    typeof block.html === "string"
+    typeof block.html === "string" &&
+    typeof block.plain_html === "string"
   );
 };
 
@@ -77,10 +82,11 @@ const resolveRenderedImageSources = (html: string): string =>
 
 const enrichBlock = (block: Block): Block => {
   const html = resolveRenderedImageSources(block.html);
+  const plainHtml = resolveRenderedImageSources(block.plain_html);
   const table = block.kind === "table" && !block.preview?.table
     ? parseMarkdownTable(block.source)
     : null;
-  if (html === block.html && !table) return block;
+  if (html === block.html && plainHtml === block.plain_html && !table) return block;
 
   const preview = table
     ? { ...(block.preview ?? {}), table }
@@ -88,6 +94,7 @@ const enrichBlock = (block: Block): Block => {
   return {
     ...block,
     html,
+    plain_html: plainHtml,
     ...(preview ? { preview } : {}),
   };
 };
@@ -97,12 +104,20 @@ const normalizeDocumentPayload = (payload: DocumentPayload): DocumentPayload => 
   blocks: payload.blocks.map(enrichBlock),
 });
 
+const EMPTY_ANNOTATIONS: Annotations = { blocks: [] };
+
 export const initMarkdownEngine = async (): Promise<void> => {
   try {
     const wasm = await import(/* @vite-ignore */ "../wasm/om_wasm.js");
     await wasm.default();
-    parseImpl = (source: string, path = UNTITLED_PATH) =>
-      decodeDocumentPayload(wasm.parse_document_json(source, path) as string);
+    parseImpl = (source: string, path = UNTITLED_PATH, annotations?: Annotations) =>
+      decodeDocumentPayload(
+        wasm.render_project_json(
+          source,
+          path,
+          JSON.stringify(annotations ?? EMPTY_ANNOTATIONS),
+        ) as string,
+      );
     runtimeName = "wasm";
   } catch {
     console.warn("[open-md] WASM engine unavailable, using TypeScript stub");
@@ -114,4 +129,5 @@ export const markdownEngineRuntime = () => runtimeName;
 export const parseDocument = (
   source: string,
   path = UNTITLED_PATH,
-): DocumentPayload => normalizeDocumentPayload(parseImpl(source, path));
+  annotations?: Annotations,
+): DocumentPayload => normalizeDocumentPayload(parseImpl(source, path, annotations));

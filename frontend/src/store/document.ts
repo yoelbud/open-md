@@ -1,10 +1,14 @@
 import { createSignal, createMemo, batch } from "solid-js";
 import type {
+  Annotations,
   Block,
   DocumentPayload,
+  MarkRange,
   PreviewContentWidth,
   PreviewDocumentMeta,
   PreviewFontFamily,
+  ProjectFileFormat,
+  RenderMode,
 } from "../ipc/types";
 import {
   createMarkdownFile as desktopCreateMarkdownFile,
@@ -135,29 +139,263 @@ export const canRedo = () => historyPos < history.length - 1;
 
 const SAMPLE = `# Welcome to open-md
 
-This is the **M0 skeleton**. All three panes below render from the same
-in-memory document. Editing happens in the *source* pane for now —
-*IR* and *Preview* will become editable in later milestones.
+open-md is a snappy local Markdown editor with synchronized **Source**, **IR**,
+and **Preview** panes that only re-render the blocks you actually change. This
+page shows off everything the editor can render — including rich, *word-like*
+features that live in the IR, never in your Markdown text.
 
-## A list
+Switch the Preview between **Rich** and **Markdown** with the toggle in its
+toolbar: Rich shows the polished document, Markdown shows the exact standard
+Markdown that gets exported.
 
-- segmenter is in Rust (\`crates/om-core\`)
-- renderer is in Rust (\`crates/om-render\`)
-- this preview uses a TS stub until Tauri is wired in M1
+## Rich inline text
 
-## A code block
+Beyond the usual **bold**, *italic*, ~~strikethrough~~, and \`inline code\`,
+open-md can highlight a phrase, tint words with any color, and paint a
+colored badge — yet the exported Markdown stays perfectly clean.
+
+The rich formatting above is stored as IR annotations (character ranges +
+marks), so a plain Markdown reader sees ordinary words while open-md paints
+them.
+
+## Callouts
+
+Callouts use GitHub's alert syntax and render as colored, iconified panels.
+They are standard block quotes, so they degrade gracefully in Markdown mode.
+
+> [!NOTE]
+> Callouts are just block quotes with a \`[!KIND]\` marker, so they round-trip
+> as ordinary Markdown everywhere else.
+
+> [!TIP] Custom titles
+> Add text after the marker to override the default title.
+
+> [!IMPORTANT]
+> The block kind is stored in the IR — open the IR pane to see it labelled
+> \`callout\`.
+
+> [!WARNING]
+> Editing the marker line changes the callout's color and icon.
+
+> [!CAUTION]
+> Removing the marker turns it back into a plain block quote.
+
+## Lists and tasks
+
+1. ordered steps
+2. with **inline** formatting
+3. and IR-backed highlights
+
+- bullets too
+- nested ideas
+- with a highlighted phrase
+
+- [x] segmenter in Rust (\`crates/om-core\`)
+- [x] per-block renderer (\`crates/om-render\`)
+- [ ] your next great document
+
+## Tables
+
+| Feature      | Status        | Notes                         |
+| :----------- | :-----------: | ----------------------------: |
+| Callouts     | ✅ done       | five severities               |
+| Annotations  | ✅ done       | highlight + color, in the IR  |
+| Code labels  | ✅ done       | language shown in the chrome  |
+
+## Code
 
 \`\`\`rust
 fn main() {
+    // Fenced code blocks show their language in the header.
     println!("hello, open-md");
 }
 \`\`\`
 
-> Block-level IR is the seam used for caching and incremental rendering.
+## Diagrams
+
+\`\`\`mermaid
+graph LR
+    Source --> IR
+    IR --> Preview
+    Preview --> Source
+\`\`\`
+
+---
+
+> A plain block quote (no marker) still renders as a classic quote, with
+> **bold**, *italic*, and a [link](https://example.com).
 `;
 
 const [source, setSourceRaw] = createSignal(SAMPLE);
 const [path, setPathRaw] = createSignal(UNTITLED_PATH);
+
+// --- IR annotation layer (rich inline formatting) --------------------------
+
+// Locate `needle` within a block's clean source and express it as a character
+// range (matching the Rust segmenter's per-block char offsets).
+const phraseRange = (
+  blockSource: string,
+  needle: string,
+  marks: string[],
+): MarkRange | null => {
+  const idx = blockSource.indexOf(needle);
+  if (idx < 0) return null;
+  const start = Array.from(blockSource.slice(0, idx)).length;
+  const end = start + Array.from(needle).length;
+  return { start, end, marks };
+};
+
+// Build the sample document's annotation layer by locating phrases in the
+// (clean) block sources, so the showcase demonstrates IR-backed highlight and
+// color without any non-standard tokens in the Markdown body.
+const buildDemoAnnotations = (body: string): Annotations => {
+  const blocks = parseDocument(body).blocks;
+  const specs: { contains: string; phrases: { needle: string; marks: string[] }[] }[] = [
+    {
+      contains: "highlight a phrase",
+      phrases: [
+        { needle: "highlight a phrase", marks: ["highlight"] },
+        { needle: "any color", marks: ["fg-purple"] },
+        { needle: "colored badge", marks: ["fg-white", "bg-blue"] },
+        { needle: "perfectly clean", marks: ["fg-green"] },
+      ],
+    },
+    {
+      contains: "with a highlighted phrase",
+      phrases: [{ needle: "highlighted phrase", marks: ["highlight"] }],
+    },
+  ];
+  const blockAnnotations = [];
+  for (const spec of specs) {
+    const index = blocks.findIndex((block) => block.source.includes(spec.contains));
+    if (index < 0) continue;
+    const blockSource = blocks[index]!.source;
+    const ranges = spec.phrases
+      .map((phrase) => phraseRange(blockSource, phrase.needle, phrase.marks))
+      .filter((range): range is MarkRange => range !== null);
+    if (ranges.length) blockAnnotations.push({ index, ranges });
+  }
+  return { blocks: blockAnnotations };
+};
+
+const EMPTY_ANNOTATIONS: Annotations = { blocks: [] };
+
+const [annotations, setAnnotationsRaw] = createSignal<Annotations>(buildDemoAnnotations(SAMPLE));
+const [previewMode, setPreviewModeRaw] = createSignal<RenderMode>("rich");
+
+export const useAnnotations = () => annotations;
+export const usePreviewMode = () => previewMode;
+export const setPreviewMode = (mode: RenderMode) => setPreviewModeRaw(mode);
+export const setAnnotations = (next: Annotations) => setAnnotationsRaw(next);
+
+// --- IR annotation mutation API --------------------------------------------
+// The rich inline layer (highlight + text/background color) lives ONLY here in
+// the IR, never in the Markdown body. The preview and IR toolbars mutate it
+// through these helpers using character offsets into a block's clean source.
+
+/** Supported colors for the formatting toolbars (mirrors `COLOR_PALETTE`). */
+export const MARK_COLORS = [
+  "red", "orange", "amber", "yellow", "green", "teal", "blue", "purple", "pink", "gray", "white",
+  "black",
+] as const;
+
+export type MarkColor = (typeof MARK_COLORS)[number];
+
+// Return the annotation ranges for a block index (empty when none).
+export const rangesForBlockIndex = (blockIndex: number): MarkRange[] =>
+  annotations().blocks.find((entry) => entry.index === blockIndex)?.ranges ?? [];
+
+// Persist a fresh range list for one block, pruning empty entries so the IR
+// stays minimal.
+const writeBlockRanges = (blockIndex: number, ranges: MarkRange[]) => {
+  const others = annotations().blocks.filter((entry) => entry.index !== blockIndex);
+  const cleaned = ranges
+    .filter((range) => range.end > range.start && range.marks.length > 0)
+    .sort((a, b) => a.start - b.start);
+  const next = cleaned.length ? [...others, { index: blockIndex, ranges: cleaned }] : others;
+  next.sort((a, b) => a.index - b.index);
+  setAnnotationsRaw({ blocks: next });
+};
+
+// Apply a transform to the marks covering an exact [start, end) span. Existing
+// ranges that intersect the span are trimmed so neighboring formatting is
+// preserved, and the transformed marks are stacked onto the targeted span. This
+// keeps the stored ranges non-overlapping, which the renderer requires.
+const mutateBlockRange = (
+  blockIndex: number,
+  start: number,
+  end: number,
+  transform: (marks: Set<string>) => void,
+) => {
+  if (end <= start) return;
+  const ranges = rangesForBlockIndex(blockIndex);
+
+  const base = new Set<string>();
+  for (const range of ranges) {
+    if (range.start <= start && range.end >= end) {
+      for (const mark of range.marks) base.add(mark);
+    }
+  }
+  transform(base);
+
+  const kept: MarkRange[] = [];
+  for (const range of ranges) {
+    if (range.end <= start || range.start >= end) {
+      kept.push(range);
+      continue;
+    }
+    if (range.start < start) kept.push({ start: range.start, end: start, marks: [...range.marks] });
+    if (range.end > end) kept.push({ start: end, end: range.end, marks: [...range.marks] });
+  }
+  if (base.size) kept.push({ start, end, marks: [...base] });
+  writeBlockRanges(blockIndex, kept);
+};
+
+const withoutPrefix = (marks: Set<string>, prefix: string) => {
+  for (const mark of [...marks]) if (mark.startsWith(prefix)) marks.delete(mark);
+};
+
+/** Toggle the highlight mark on the given span. */
+export const toggleHighlight = (blockIndex: number, start: number, end: number) =>
+  mutateBlockRange(blockIndex, start, end, (marks) => {
+    if (marks.has("highlight")) marks.delete("highlight");
+    else marks.add("highlight");
+  });
+
+/** Set (or clear, when `color` is null) the text color on the given span. */
+export const setForeground = (
+  blockIndex: number,
+  start: number,
+  end: number,
+  color: MarkColor | null,
+) =>
+  mutateBlockRange(blockIndex, start, end, (marks) => {
+    withoutPrefix(marks, "fg-");
+    if (color) marks.add(`fg-${color}`);
+  });
+
+/** Set (or clear, when `color` is null) the background color on the given span. */
+export const setBackground = (
+  blockIndex: number,
+  start: number,
+  end: number,
+  color: MarkColor | null,
+) =>
+  mutateBlockRange(blockIndex, start, end, (marks) => {
+    withoutPrefix(marks, "bg-");
+    if (color) marks.add(`bg-${color}`);
+  });
+
+/** Remove all marks from the given span. */
+export const clearMarks = (blockIndex: number, start: number, end: number) =>
+  mutateBlockRange(blockIndex, start, end, (marks) => marks.clear());
+
+/** Remove a single stored range from a block (used by the IR annotation chips). */
+export const removeBlockRange = (blockIndex: number, rangeIndex: number) => {
+  const ranges = rangesForBlockIndex(blockIndex).filter((_, i) => i !== rangeIndex);
+  writeBlockRanges(blockIndex, ranges);
+};
+
 const [editingPoint, setEditingPointRaw] = createSignal<EditingPoint | null>(null);
 const [projectRoot, setProjectRootRaw] = createSignal<string | null>(null);
 const [projectFiles, setProjectFilesRaw] = createSignal<ProjectFile[]>([]);
@@ -211,12 +449,14 @@ const setPath = (p: string) => {
 const replaceDocument = (
   file: LoadedMarkdownFile,
   activeFilePath: string | null,
+  nextAnnotations: Annotations = EMPTY_ANNOTATIONS,
 ) => {
   batch(() => {
     setPathRaw(file.path);
     setSourceRaw(file.source);
     setEditingPointRaw(null);
     setActiveProjectFileRaw(activeFilePath);
+    setAnnotationsRaw(nextAnnotations);
   });
   resetHistory(file.source, file.path);
 };
@@ -353,7 +593,7 @@ export const resetPreviewTypography = () => {
 };
 
 export const useDocument = createMemo<DocumentPayload>(() => {
-  const doc = parseDocument(source(), path());
+  const doc = parseDocument(source(), path(), annotations());
   return { ...doc, preview: previewSettings() };
 });
 
@@ -557,6 +797,10 @@ export const BLOCK_TEMPLATES: BlockTemplate[] = [
     snippet: "```rust\nfn main() {\n    println!(\"hi\");\n}\n```\n\n" },
   { id: "quote", label: "Blockquote", icon: "❝",
     snippet: "> A quoted line.\n\n" },
+  { id: "callout", label: "Callout (note)", icon: "ⓘ",
+    snippet: "> [!NOTE]\n> Something worth noticing.\n\n" },
+  { id: "callout-warn", label: "Callout (warning)", icon: "⚠",
+    snippet: "> [!WARNING]\n> Watch out for this.\n\n" },
   { id: "table", label: "Table", icon: "▦",
     snippet: "| col a | col b |\n| ----- | ----- |\n| 1     | 2     |\n\n" },
   { id: "hr", label: "Divider", icon: "—", snippet: "---\n\n" },
@@ -766,6 +1010,150 @@ export const saveFile = async () => {
   const a = Object.assign(document.createElement("a"), { href: url, download: p });
   a.click();
   URL.revokeObjectURL(url);
+};
+
+// --- native project (.ommd) + exports --------------------------------------
+
+const PROJECT_EXTENSION = ".ommd";
+
+const baseName = (value: string) => {
+  const file = value.replace(/\\/g, "/").split("/").pop() ?? value;
+  return file.replace(/\.(ommd|md|markdown)$/i, "");
+};
+
+const downloadFile = (filename: string, data: string, mime: string) => {
+  const blob = new Blob([data], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+const writeViaPicker = async (
+  suggestedName: string,
+  description: string,
+  accept: Record<string, string[]>,
+  data: string,
+): Promise<boolean> => {
+  const savePicker = (window as WindowWithSaveFilePicker).showSaveFilePicker;
+  if (!savePicker) return false;
+  try {
+    const handle = await savePicker({ suggestedName, types: [{ description, accept }] });
+    const writable = await handle.createWritable();
+    await writable.write(data);
+    await writable.close();
+    return true;
+  } catch (error) {
+    if (isAbortError(error)) return true;
+    throw error;
+  }
+};
+
+// Serialize the current document as the native `.ommd` project: clean Markdown
+// body plus the IR annotation layer and preview settings.
+export const serializeProject = (): string => {
+  const project: ProjectFileFormat = {
+    format: "open-md-project",
+    version: 1,
+    body: source(),
+    annotations: annotations(),
+    meta: { preview: previewSettings() },
+  };
+  return JSON.stringify(project, null, 2);
+};
+
+const isAnnotations = (value: unknown): value is Annotations =>
+  !!value && typeof value === "object" && Array.isArray((value as Annotations).blocks);
+
+// Parse a `.ommd` JSON string into a normalized project, tolerating partial
+// inputs (missing annotations or meta).
+export const parseProjectJson = (json: string): ProjectFileFormat => {
+  const parsed: unknown = JSON.parse(json);
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Not a valid open-md project file");
+  }
+  const record = parsed as Partial<ProjectFileFormat>;
+  if (typeof record.body !== "string") {
+    throw new Error("Project file is missing a Markdown body");
+  }
+  const project: ProjectFileFormat = {
+    format: "open-md-project",
+    version: 1,
+    body: record.body,
+    annotations: isAnnotations(record.annotations) ? record.annotations : EMPTY_ANNOTATIONS,
+  };
+  if (record.meta) project.meta = record.meta;
+  return project;
+};
+
+const applyProjectFile = (project: ProjectFileFormat, displayPath: string) => {
+  batch(() => {
+    setPathRaw(displayPath);
+    setSourceRaw(project.body);
+    setEditingPointRaw(null);
+    setActiveProjectFileRaw(null);
+    setAnnotationsRaw(project.annotations);
+    if (project.meta?.preview) {
+      setPreviewSettingsRaw(normalizePreviewSettings(project.meta.preview));
+    }
+  });
+  resetHistory(project.body, displayPath);
+};
+
+// Save the document as a native `.ommd` project (the canonical save format).
+export const saveProject = async () => {
+  const data = serializeProject();
+  const suggested = `${baseName(path())}${PROJECT_EXTENSION}`;
+  try {
+    const wrote = await writeViaPicker(
+      suggested,
+      "open-md project",
+      { "application/json": [PROJECT_EXTENSION] },
+      data,
+    );
+    if (wrote) return;
+  } catch (error) {
+    reportFileError("Save project failed", error);
+    return;
+  }
+  downloadFile(suggested, data, "application/json");
+};
+
+// Open a native `.ommd` project file.
+export const openProjectDocument = async () => {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = `${PROJECT_EXTENSION},application/json`;
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const project = parseProjectJson(await file.text());
+      applyProjectFile(project, file.name);
+    } catch (error) {
+      reportFileError("Open project failed", error);
+    }
+  };
+  input.click();
+};
+
+// Export the clean, standard Markdown body (no IR-only tokens).
+export const exportMarkdown = async () => {
+  const body = source();
+  const suggested = `${baseName(path())}.md`;
+  try {
+    const wrote = await writeViaPicker(
+      suggested,
+      "Markdown",
+      { "text/markdown": [".md", ".markdown"] },
+      body,
+    );
+    if (wrote) return;
+  } catch (error) {
+    reportFileError("Export Markdown failed", error);
+    return;
+  }
+  downloadFile(suggested, body, "text/markdown");
 };
 
 export const openFile = async () => {

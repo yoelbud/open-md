@@ -4,6 +4,7 @@ import { SourcePane } from "./panes/source/SourcePane";
 import { IrPane } from "./panes/ir/IrPane";
 import { PreviewPane } from "./panes/preview/PreviewPane";
 import { PrintPreview } from "./panes/preview/PrintPreview";
+import { MarkToolbar } from "./panes/MarkToolbar";
 import { ProjectSidebar } from "./panes/project/ProjectSidebar";
 import { MenuBar } from "./menubar/MenuBar";
 import { buildMenus } from "./menubar/menus";
@@ -303,6 +304,7 @@ export const App = () => {
       </div>
     </div>
     <PrintPreview />
+    <MarkToolbar />
     </>
   );
 };

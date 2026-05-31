@@ -10,13 +10,16 @@ import {
   replaceBlockSource,
   resetPreviewTypography,
   setEditingPoint,
+  setPreviewMode,
   setPreviewTypography,
   useDocument,
   useEditingPoint,
+  usePreviewMode,
   usePreviewSettings,
 } from "../../store/document";
 import { InsertMenu } from "../InsertMenu";
-import type { Block, PreviewContentWidth, PreviewFontFamily } from "../../ipc/types";
+import { charIndex, requestMarkToolbar, supportsMarks } from "../MarkToolbar";
+import type { Block, PreviewContentWidth, PreviewFontFamily, RenderMode } from "../../ipc/types";
 import { exportPreviewPdf } from "../../ipc/previewPdf";
 import { parseMarkdownTable } from "../../markdown/table";
 import { fromEditableText, toEditableText } from "../../markdown/blockEdit";
@@ -102,9 +105,10 @@ const renderMermaidBlocks = async (root: HTMLElement, blockId: string, version: 
 };
 
 // ── single block row ────────────────────────────────────────────────────────
-const PreviewBlockRow = (props: { block: Block }) => {
+const PreviewBlockRow = (props: { block: Block; index: number }) => {
   const [editing, setEditing] = createSignal(false);
   const editingPoint = useEditingPoint();
+  const previewMode = usePreviewMode();
   let viewRef: HTMLDivElement | undefined;
   let taRef: HTMLTextAreaElement | undefined;
   let renderVersion = 0;
@@ -132,8 +136,10 @@ const PreviewBlockRow = (props: { block: Block }) => {
   };
 
   // Keep view HTML in sync when source changes externally (not while editing).
+  // Markdown mode renders the plain, standard-Markdown HTML; rich mode renders
+  // the IR-enriched HTML with the annotation overlay.
   createEffect(() => {
-    const html = props.block.html;
+    const html = previewMode() === "markdown" ? props.block.plain_html : props.block.html;
     if (!viewRef || editing()) return;
     renderVersion += 1;
     viewRef.dataset.mermaidVersion = String(renderVersion);
@@ -157,7 +163,42 @@ const PreviewBlockRow = (props: { block: Block }) => {
     setEditing(false);
   };
 
+  // When the user selects text inside the rendered (rich) view, offer the
+  // formatting popup instead of entering edit mode. The selected text is located
+  // in the block's clean source to derive character offsets for the IR layer.
+  const offerFormatting = (e: MouseEvent): boolean => {
+    if (previewMode() !== "rich" || !supportsMarks(props.block.kind) || !viewRef) return false;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+    const range = selection.getRangeAt(0);
+    if (!viewRef.contains(range.commonAncestorContainer)) return false;
+    const text = selection.toString();
+    if (!text.trim()) return false;
+    const idx = props.block.source.indexOf(text);
+    if (idx < 0) return false;
+    requestMarkToolbar({
+      blockIndex: props.index,
+      start: charIndex(props.block.source, idx),
+      end: charIndex(props.block.source, idx + text.length),
+      x: e.clientX,
+      y: e.clientY + 12,
+    });
+    return true;
+  };
+
+  // A drag-selection ends with `mouseup` but does NOT emit a `click`, so the
+  // formatting popup must be offered here. When it opens, suppress the click
+  // that may follow a same-spot release so we don't also drop into edit mode.
+  let suppressNextClick = false;
+  const handleViewMouseUp = (e: MouseEvent) => {
+    if (offerFormatting(e)) suppressNextClick = true;
+  };
+
   const handleViewClick = (e: MouseEvent) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
     const target = e.target as HTMLElement;
     // If the user clicked a link, open it instead of entering edit mode.
     const anchor = target.closest("a");
@@ -198,7 +239,7 @@ const PreviewBlockRow = (props: { block: Block }) => {
   };
 
   // ── image block: render the dedicated view (toolbar + drag-resize) ──
-  if (props.block.kind === "image" && !editing()) {
+  if (props.block.kind === "image" && !editing() && previewMode() === "rich") {
     return (
       <div
         class="preview-row"
@@ -225,6 +266,7 @@ const PreviewBlockRow = (props: { block: Block }) => {
   if (
     props.block.kind === "table" &&
     !editing() &&
+    previewMode() === "rich" &&
     (props.block.preview?.table || parseMarkdownTable(props.block.source))
   ) {
     return (
@@ -265,7 +307,8 @@ const PreviewBlockRow = (props: { block: Block }) => {
         ref={viewRef}
         class="preview-block"
         classList={{ hidden: editing() }}
-        title="Click to edit · links open in new tab"
+        title="Click to edit · select text to format · links open in new tab"
+        onMouseUp={handleViewMouseUp}
         onClick={handleViewClick}
       />
 
@@ -312,11 +355,28 @@ type PaneProps = {
   layoutControls?: JSX.Element;
 };
 
+const MODE_OPTIONS: { id: RenderMode; label: string }[] = [
+  { id: "rich", label: "Rich" },
+  { id: "markdown", label: "Markdown" },
+];
+
 const PreviewToolbar = () => {
   const settings = usePreviewSettings();
+  const previewMode = usePreviewMode();
 
   return (
-    <div class="preview-toolbar" aria-label="Preview typography controls">
+    <div class="preview-toolbar" aria-label="Preview controls">
+      <div class="preview-mode-tools" role="group" aria-label="Preview render mode">
+        {MODE_OPTIONS.map((option) => (
+          <button
+            type="button"
+            classList={{ active: previewMode() === option.id }}
+            onClick={() => setPreviewMode(option.id)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
       <label class="preview-tool">
         <span>Font</span>
         <select
@@ -468,7 +528,7 @@ export const PreviewPane = (props: PaneProps) => {
       >
         <div class="preview-document">
           <Index each={doc().blocks}>
-            {(block) => <PreviewBlockRow block={block()} />}
+            {(block, index) => <PreviewBlockRow block={block()} index={index} />}
           </Index>
         </div>
         <Show when={dragOver()}>

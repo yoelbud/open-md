@@ -1,4 +1,4 @@
-import { createEffect, createSignal, Index, Show } from "solid-js";
+import { createEffect, createSignal, For, Index, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import {
   clearEditingPoint,
@@ -8,12 +8,16 @@ import {
   isEditingPointInBlock,
   moveBlocksDown,
   moveBlocksUp,
+  rangesForBlockIndex,
+  removeBlockRange,
   replaceBlockSource,
   setEditingPoint,
+  useAnnotations,
   useDocument,
   useEditingPoint,
 } from "../../store/document";
 import { InsertMenu } from "../InsertMenu";
+import { charIndex, requestMarkToolbar, supportsMarks } from "../MarkToolbar";
 import { fromEditableText, toEditableText } from "../../markdown/blockEdit";
 import type { Block } from "../../ipc/types";
 
@@ -45,14 +49,35 @@ const selectRange = (anchorId: string, targetId: string, blocks: Block[]) => {
 let lastClickedId: string | null = null;
 
 // ── single block row ────────────────────────────────────────────────────────
-const IrBlockRow = (props: { block: Block }) => {
+const IrBlockRow = (props: { block: Block; index: number }) => {
   const editingPoint = useEditingPoint();
+  const allAnnotations = useAnnotations();
   let ta: HTMLTextAreaElement | undefined;
 
   const isSelected = () => selected().has(props.block.id);
   const isEditingPoint = () => {
     const point = editingPoint();
     return !!point && point.pane !== "ir" && isEditingPointInBlock(point, props.block);
+  };
+
+  // Annotation ranges stored for this block, resolved against its current
+  // source so the chips show the actual highlighted/colored text.
+  const ranges = () => (allAnnotations(), rangesForBlockIndex(props.index));
+  const rangeText = (start: number, end: number) =>
+    Array.from(props.block.source).slice(start, end).join("");
+
+  // Open the formatting popup for the current textarea selection.
+  const offerFormatting = (e: MouseEvent, target = ta) => {
+    if (!target || !supportsMarks(props.block.kind)) return;
+    const { selectionStart, selectionEnd, value } = target;
+    if (selectionStart === selectionEnd) return;
+    requestMarkToolbar({
+      blockIndex: props.index,
+      start: charIndex(value, selectionStart),
+      end: charIndex(value, selectionEnd),
+      x: e.clientX,
+      y: e.clientY + 12,
+    });
   };
 
   const resize = () => {
@@ -127,7 +152,10 @@ const IrBlockRow = (props: { block: Block }) => {
         onFocus={(e) => markEditingPoint(e.currentTarget)}
         onSelect={(e) => markEditingPoint(e.currentTarget)}
         onKeyUp={(e) => markEditingPoint(e.currentTarget)}
-        onMouseUp={(e) => markEditingPoint(e.currentTarget)}
+        onMouseUp={(e) => {
+          markEditingPoint(e.currentTarget);
+          offerFormatting(e, e.currentTarget);
+        }}
         onBlur={() => clearEditingPoint("ir")}
         onInput={(e) => {
           replaceBlockSource(props.block, fromEditableText(props.block, e.currentTarget.value));
@@ -135,6 +163,32 @@ const IrBlockRow = (props: { block: Block }) => {
           markEditingPoint(e.currentTarget);
         }}
       />
+      <Show when={ranges().length > 0}>
+        <div class="ir-annotations" aria-label="IR annotations">
+          <For each={ranges()}>
+            {(range, i) => (
+              <span class="ir-annotation-chip">
+                <span class="ir-annotation-text">“{rangeText(range.start, range.end)}”</span>
+                <For each={range.marks}>
+                  {(mark) => <span class="ir-annotation-mark">{mark}</span>}
+                </For>
+                <button
+                  type="button"
+                  class="ir-annotation-remove"
+                  title="Remove annotation"
+                  aria-label="Remove annotation"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeBlockRange(props.index, i());
+                  }}
+                >
+                  ✕
+                </button>
+              </span>
+            )}
+          </For>
+        </div>
+      </Show>
     </div>
   );
 };
@@ -222,7 +276,7 @@ export const IrPane = (props: PaneProps) => {
       <SelectionToolbar />
       <div class="pane-body">
         <Index each={doc().blocks}>
-          {(block) => <IrBlockRow block={block()} />}
+          {(block, index) => <IrBlockRow block={block()} index={index} />}
         </Index>
       </div>
     </div>

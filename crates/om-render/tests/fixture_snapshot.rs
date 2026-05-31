@@ -23,3 +23,22 @@ fn renders_hello_fixture() {
         .collect();
     insta::assert_yaml_snapshot!(rendered);
 }
+
+#[test]
+fn renders_showcase_fixture() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root")
+        .to_path_buf();
+    let path = root.join("fixtures").join("showcase.md");
+    let src =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let doc = segment(&src);
+    let rendered: Vec<_> = doc
+        .blocks
+        .iter()
+        .map(|b| (format!("{:?}", b.kind), render_block(b)))
+        .collect();
+    insta::assert_yaml_snapshot!(rendered);
+}

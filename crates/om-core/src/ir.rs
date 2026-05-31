@@ -26,6 +26,8 @@ pub enum BlockKind {
     Table,
     /// Block quote.
     BlockQuote,
+    /// Callout / admonition (GitHub `[!NOTE]` style alert block quote).
+    Callout,
     /// Horizontal rule (`---`, `***`, `___`).
     ThematicBreak,
     /// Raw HTML block.
