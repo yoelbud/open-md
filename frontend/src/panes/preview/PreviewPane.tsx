@@ -26,6 +26,12 @@ import { fromEditableText, toEditableText } from "../../markdown/blockEdit";
 import { ImageBlockView } from "./ImageBlockView";
 import { TableBlockView } from "./TableBlockView";
 import { extractHeadings, isTocToken, renderTocHtml } from "../../store/outline";
+import {
+  extractBibliography,
+  isBibliographyToken,
+  replaceCitationTokens,
+  renderReferencesHtml,
+} from "../../store/citations";
 import { splitInlineMath } from "../../store/mathInline";
 import { setupFootnoteTooltip } from "./footnotes";
 import {
@@ -265,6 +271,19 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
       const headings = extractHeadings(doc().blocks);
       html = renderTocHtml(headings);
     }
+    // ── Citations: bibliography token renders the references list ──
+    const blocks = doc().blocks;
+    if (isBibliographyToken(props.block)) {
+      const registry = extractBibliography(blocks);
+      // Collect all cited keys by scanning all non-bib block HTML
+      const citedKeys = new Set<string>();
+      for (const b of blocks) {
+        if (b.id === props.block.id) continue;
+        const bHtml = previewMode() === "markdown" ? b.plain_html : b.html;
+        replaceCitationTokens(bHtml, registry, (k) => citedKeys.add(k));
+      }
+      html = renderReferencesHtml(registry, citedKeys);
+    }
     if (!viewRef || editing()) return;
 
     // ── Block references: strip anchor markers & resolve transclusions ──
@@ -274,7 +293,6 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
     }
 
     // Resolve embed/link tokens using the document-wide anchor map.
-    const blocks = doc().blocks;
     const anchorMap = buildAnchorMap(blocks);
     const resolver = (blockId: string): string | null => {
       const target = blocks.find((b) => b.id === blockId);
@@ -283,6 +301,14 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
       return stripAnchorFromHtml(targetHtml);
     };
     html = replaceRefTokens(html, anchorMap, resolver);
+
+    // ── Inline citations: resolve [@key] tokens ──
+    if (!isBibliographyToken(props.block)) {
+      const bibRegistry = extractBibliography(blocks);
+      if (bibRegistry.size > 0) {
+        html = replaceCitationTokens(html, bibRegistry, () => {});
+      }
+    }
 
     renderVersion += 1;
     viewRef.dataset.mermaidVersion = String(renderVersion);

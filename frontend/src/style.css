@@ -96,6 +96,43 @@
 .om-toc .toc-level-5 { padding-left: 4rem; }
 .om-toc .toc-level-6 { padding-left: 5rem; }
 
+/* Citations & References */
+.om-cite {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+.om-cite:hover {
+  text-decoration: underline;
+}
+.om-cite-group {
+  /* Wrapper for multi-citation groups — no extra visual; just semantic */
+}
+.om-cite-missing {
+  color: var(--danger, #c62828);
+  font-weight: 600;
+  background: var(--danger-bg, rgba(198, 40, 40, 0.08));
+  border-radius: 3px;
+  padding: 0 0.2em;
+}
+.om-references {
+  margin-top: 2rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+.om-references h2 {
+  font-size: 1.25rem;
+  margin: 0 0 0.75rem;
+}
+.om-references ol {
+  padding-left: 1.5rem;
+  margin: 0;
+}
+.om-reference {
+  margin-bottom: 0.5rem;
+  line-height: 1.5;
+}
+
 /* Math (KaTeX) */
 .om-math-display {
   margin: 0.6rem 0;
