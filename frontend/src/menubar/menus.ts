@@ -39,6 +39,7 @@ import {
 } from "../store/document";
 import { exportPreviewPdf } from "../ipc/previewPdf";
 import { exportHtmlAction, copyAsHtmlAction } from "../export/htmlExportAction";
+import { exportSlidesAction } from "../export/slidesExportAction";
 import { THEME_PRESETS, setTheme, useThemeId } from "../store/theme";
 
 export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] => {
@@ -73,6 +74,7 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
         { kind: "sep" },
         { kind: "action", label: "Export → Markdown…",      action: () => void exportMarkdown() },
         { kind: "action", label: "Export → HTML…",           action: () => void exportHtmlAction() },
+        { kind: "action", label: "Export → Slides…",         action: () => void exportSlidesAction() },
         { kind: "action", label: "Export → PDF…", shortcut: "Ctrl+P", action: exportPreviewPdf },
         { kind: "sep" },
         { kind: "action", label: "Exit",      danger: true,       action: () => window.close() },
