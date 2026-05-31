@@ -3,6 +3,16 @@ import type { Block, MarkdownTable, TableColumnAlignment } from "../../ipc/types
 import { formatMarkdownTable, normalizeMarkdownTable, parseMarkdownTable } from "../../markdown/table";
 import { withBlockTrailing } from "../../markdown/blockEdit";
 import { replaceBlockSource } from "../../store/document";
+import {
+  addColumn as modelAddColumn,
+  addRow as modelAddRow,
+  cloneTable,
+  deleteColumn as modelDeleteColumn,
+  deleteRow as modelDeleteRow,
+  setAlign as modelSetAlign,
+  sortByColumn as modelSortByColumn,
+} from "./tableModel";
+import type { SortDirection } from "./tableModel";
 
 type Props = {
   block: Block;
@@ -22,14 +32,6 @@ const ALIGNMENT_OPTIONS: { id: TableColumnAlignment; label: string }[] = [
   { id: "center", label: "Center" },
   { id: "right", label: "Right" },
 ];
-
-const cloneTable = (table: MarkdownTable): MarkdownTable => ({
-  headers: [...table.headers],
-  alignments: [...table.alignments],
-  rows: table.rows.map((row) => [...row]),
-});
-
-const emptyRow = (cols: number) => Array.from({ length: cols }, () => "");
 
 const alignStyle = (alignment: TableColumnAlignment | undefined) =>
   alignment && alignment !== "default" ? alignment : undefined;
@@ -63,10 +65,9 @@ export const TableBlockView = (props: Props) => {
   };
 
   const addRow = () => {
-    const next = cloneTable(table());
     const selected = activeCell();
-    const index = selected?.section === "body" ? selected.row + 1 : next.rows.length;
-    next.rows.splice(index, 0, emptyRow(next.headers.length));
+    const index = selected?.section === "body" ? selected.row + 1 : table().rows.length;
+    const next = modelAddRow(table(), index);
     setActiveCell({ section: "body", row: index, col: selected?.col ?? 0 });
     commit(next);
   };
@@ -74,19 +75,17 @@ export const TableBlockView = (props: Props) => {
   const deleteRow = () => {
     const selected = activeCell();
     if (!selected || selected.section !== "body") return;
-    const next = cloneTable(table());
-    next.rows.splice(selected.row, 1);
+    const next = modelDeleteRow(table(), selected.row);
     setActiveCell(null);
     commit(next);
   };
 
   const addColumn = () => {
-    const next = cloneTable(table());
     const selected = activeCell();
-    const index = selected ? selected.col + 1 : next.headers.length;
-    next.headers.splice(index, 0, `Column ${index + 1}`);
-    next.alignments.splice(index, 0, "default");
-    for (const row of next.rows) row.splice(index, 0, "");
+    const index = selected ? selected.col + 1 : table().headers.length;
+    const next = modelAddColumn(table(), index);
+    // Give the new column a default header name
+    next.headers[index] = `Column ${index + 1}`;
     setActiveCell({ section: "header", row: 0, col: index });
     commit(next);
   };
@@ -95,19 +94,19 @@ export const TableBlockView = (props: Props) => {
     const selected = activeCell();
     const current = table();
     if (!selected || current.headers.length <= 1) return;
-    const next = cloneTable(current);
-    next.headers.splice(selected.col, 1);
-    next.alignments.splice(selected.col, 1);
-    for (const row of next.rows) row.splice(selected.col, 1);
+    const next = modelDeleteColumn(current, selected.col);
     setActiveCell(null);
     commit(next);
   };
 
   const setAlignment = (alignment: TableColumnAlignment) => {
-    const next = cloneTable(table());
     const col = activeCell()?.col ?? 0;
-    next.alignments[col] = alignment;
-    commit(next);
+    commit(modelSetAlign(table(), col, alignment));
+  };
+
+  const sortColumn = (direction: SortDirection) => {
+    const col = activeCell()?.col ?? 0;
+    commit(modelSortByColumn(table(), col, direction));
   };
 
   const isActive = (section: CellSection, row: number, col: number) => {
@@ -155,6 +154,10 @@ export const TableBlockView = (props: Props) => {
             </button>
           )}
         </Index>
+        <span class="om-table-divider" />
+        <span class="om-table-label">Sort</span>
+        <button type="button" class="om-table-btn" onClick={() => sortColumn("asc")}>A→Z</button>
+        <button type="button" class="om-table-btn" onClick={() => sortColumn("desc")}>Z→A</button>
         <button type="button" class="om-table-btn" onClick={props.onEditSource}>MD</button>
       </div>
 
