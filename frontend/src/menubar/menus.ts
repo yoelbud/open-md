@@ -38,8 +38,9 @@ import {
   useTypewriterMode,
 } from "../store/document";
 import { exportPreviewPdf } from "../ipc/previewPdf";
+import { THEME_PRESETS, setTheme, useThemeId } from "../store/theme";
 
-export const buildMenus = (): MenuDef[] => {
+export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] => {
   const vis = usePaneVisible();
   const activeLayout = useActiveLayout();
   const outlineVis = useOutlineVisible();
@@ -48,6 +49,7 @@ export const buildMenus = (): MenuDef[] => {
   const focus = useFocusMode();
   const df = useDistractionFree();
   const scrollSyncOn = useScrollSync();
+  const currentTheme = useThemeId();
 
   const insertItems = BLOCK_TEMPLATES.map((t) => ({
     kind: "action" as const,
@@ -185,6 +187,22 @@ export const buildMenus = (): MenuDef[] => {
           kind: "action",
           label: "Reset layout",
           action: resetLayout,
+        },
+        { kind: "sep" },
+        {
+          kind: "sub",
+          label: "Theme",
+          children: THEME_PRESETS.map((preset) => ({
+            kind: "check" as const,
+            label: preset.label,
+            checked: () => currentTheme() === preset.id,
+            action: () => setTheme(preset.id),
+          })),
+        },
+        {
+          kind: "action",
+          label: "Custom CSS…",
+          action: () => opts?.onOpenCustomCss?.(),
         },
       ],
     },

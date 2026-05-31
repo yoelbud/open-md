@@ -10,6 +10,7 @@ import {
   useSource,
   useTypewriterMode,
   useFocusMode,
+  insertBlockAfter,
 } from "../../store/document";
 import { FindReplaceBar } from "../../components/FindReplaceBar";
 import {
@@ -21,6 +22,12 @@ import {
 } from "../../store/scrollSync";
 import { SlashMenu, createSlashMenuController } from "./SlashMenu";
 import type { BlockTemplate } from "../../store/document";
+import {
+  imageFileFromPaste,
+  imageFilesFromDrop,
+  hintNameFromFile,
+  ingestAndBuildSnippet,
+} from "../../store/imageDrop";
 
 type PaneProps = {
   layoutControls?: JSX.Element;
@@ -239,6 +246,52 @@ export const SourcePane = (props: PaneProps) => {
   // Focus mode CSS class on the textarea wrapper
   const focusModeClass = () => focusMode() ? "focus-mode-active" : "";
 
+  // ── Paste image handler ─────────────────────────────────────────────────
+  const handlePaste = (e: ClipboardEvent) => {
+    const file = imageFileFromPaste(e);
+    if (!file) return; // Let the default text paste proceed
+    e.preventDefault();
+    void (async () => {
+      const snippet = await ingestAndBuildSnippet(file, hintNameFromFile(file));
+      if (!snippet || !ta) return;
+      // Insert at cursor position in the source
+      const pos = ta.selectionStart;
+      const current = source();
+      const before = current.slice(0, pos);
+      const after = current.slice(ta.selectionEnd);
+      // Ensure the image gets its own line
+      const padBefore = before.length > 0 && !before.endsWith("\n") ? "\n" : "";
+      const padAfter = after.length > 0 && !after.startsWith("\n") ? "\n" : "";
+      const insertion = `${padBefore}${snippet}${padAfter}`;
+      setSource(before + insertion + after);
+    })();
+  };
+
+  // ── Drop image handler ──────────────────────────────────────────────────
+  const handleDrop = (e: DragEvent) => {
+    const files = imageFilesFromDrop(e);
+    if (!files.length) return;
+    e.preventDefault();
+    void (async () => {
+      for (const file of files) {
+        const snippet = await ingestAndBuildSnippet(file, hintNameFromFile(file));
+        if (snippet) {
+          insertBlockAfter(null, snippet + "\n\n");
+        }
+      }
+    })();
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    // Allow drop by preventing default for image files
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    if (dt.types.includes("Files")) {
+      e.preventDefault();
+      dt.dropEffect = "copy";
+    }
+  };
+
   return (
     <div class="pane">
       <div class="pane-header">
@@ -246,7 +299,11 @@ export const SourcePane = (props: PaneProps) => {
         <span class="header-actions">{props.layoutControls}</span>
       </div>
       <FindReplaceBar select={selectRange} />
-      <div class={`pane-body source-editor ${focusModeClass()}`}>
+      <div
+        class={`pane-body source-editor ${focusModeClass()}`}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
         <Show when={markerLine() !== null}>
           <div class="source-edit-marker" style={markerStyle()} aria-hidden="true" />
         </Show>
@@ -290,6 +347,7 @@ export const SourcePane = (props: PaneProps) => {
             clearEditingPoint("source");
             slash.dismiss();
           }}
+          onPaste={handlePaste}
         />
         <SlashMenu
           state={slash.state()}

@@ -10,6 +10,7 @@ import { OutlinePanel } from "./panes/outline/OutlinePanel";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette } from "./components/CommandPalette";
 import { RecoveryBanner } from "./components/RecoveryBanner";
+import { CustomCssModal } from "./components/CustomCssModal";
 import { MenuBar } from "./menubar/MenuBar";
 import { buildMenus } from "./menubar/menus";
 import {
@@ -64,8 +65,9 @@ export const App = () => {
   const activeLayout = useActiveLayout();
   const outlineVisible = useOutlineVisible();
   const statusBarVisible = useStatusBarVisible();
-  const menus = buildMenus();
+  const menus = buildMenus({ onOpenCustomCss: () => setCustomCssOpen(true) });
   const [paletteOpen, setPaletteOpen] = createSignal(false);
+  const [customCssOpen, setCustomCssOpen] = createSignal(false);
   const [recoveryDraft, setRecoveryDraft] = createSignal<Draft | null>(null);
   const [draggingPane, setDraggingPane] = createSignal<PaneId | null>(null);
   const [dropTarget, setDropTarget] = createSignal<{
@@ -394,6 +396,7 @@ export const App = () => {
     <PrintPreview />
     <MarkToolbar />
     <CommandPalette commands={commands()} open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
+    <CustomCssModal open={customCssOpen()} onClose={() => setCustomCssOpen(false)} />
     </>
   );
 };
