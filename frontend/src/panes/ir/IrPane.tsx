@@ -14,6 +14,7 @@ import {
   useEditingPoint,
 } from "../../store/document";
 import { InsertMenu } from "../InsertMenu";
+import { fromEditableText, toEditableText } from "../../markdown/blockEdit";
 import type { Block } from "../../ipc/types";
 
 // ── selection state (module-level so toolbar and rows share it) ─────────────
@@ -69,7 +70,7 @@ const IrBlockRow = (props: { block: Block }) => {
   };
 
   createEffect(() => {
-    const next = props.block.source.replace(/\n$/, "");
+    const next = toEditableText(props.block);
     if (!ta) return;
     if (ta.value === next) return;
     const ss = ta.selectionStart;
@@ -129,8 +130,7 @@ const IrBlockRow = (props: { block: Block }) => {
         onMouseUp={(e) => markEditingPoint(e.currentTarget)}
         onBlur={() => clearEditingPoint("ir")}
         onInput={(e) => {
-          const hadTrailing = props.block.source.endsWith("\n");
-          replaceBlockSource(props.block, e.currentTarget.value + (hadTrailing ? "\n" : ""));
+          replaceBlockSource(props.block, fromEditableText(props.block, e.currentTarget.value));
           resize();
           markEditingPoint(e.currentTarget);
         }}

@@ -19,6 +19,7 @@ import { InsertMenu } from "../InsertMenu";
 import type { Block, PreviewContentWidth, PreviewFontFamily } from "../../ipc/types";
 import { exportPreviewPdf } from "../../ipc/previewPdf";
 import { parseMarkdownTable } from "../../markdown/table";
+import { fromEditableText, toEditableText } from "../../markdown/blockEdit";
 import { ImageBlockView } from "./ImageBlockView";
 import { TableBlockView } from "./TableBlockView";
 
@@ -100,31 +101,6 @@ const renderMermaidBlocks = async (root: HTMLElement, blockId: string, version: 
   }
 };
 
-// ── view → markdown round-trip (M0 stub, replaced by Rust in M4) ──────────
-const textToMarkdown = (block: Block, text: string): string => {
-  const trimmed = text.replace(/\u00a0/g, " ").trimEnd();
-  const trailing = block.source.endsWith("\n") ? "\n" : "";
-  switch (block.kind) {
-    case "heading": {
-      const m = /^(#{1,6})\s/.exec(block.source);
-      return `${m ? m[1] : "#"} ${trimmed}${trailing}`;
-    }
-    case "block_quote":
-      return trimmed.split(/\n/).map((l) => `> ${l}`).join("\n") + trailing;
-    case "list":
-    case "task_list":
-      return trimmed.split(/\n/).map((l) => l.trim() ? `- ${l}` : l).join("\n") + trailing;
-    case "code": {
-      const m = /^```(\w*)/.exec(block.source);
-      return `\`\`\`${m ? m[1] : ""}\n${trimmed}\n\`\`\`${trailing}`;
-    }
-    case "thematic_break":
-      return block.source;
-    default:
-      return trimmed + trailing;
-  }
-};
-
 // ── single block row ────────────────────────────────────────────────────────
 const PreviewBlockRow = (props: { block: Block }) => {
   const [editing, setEditing] = createSignal(false);
@@ -176,7 +152,7 @@ const PreviewBlockRow = (props: { block: Block }) => {
   });
 
   const commitEdit = (val: string) => {
-    const next = textToMarkdown(props.block, val);
+    const next = fromEditableText(props.block, val);
     if (next !== props.block.source) replaceBlockSource(props.block, next);
     setEditing(false);
   };
@@ -300,7 +276,7 @@ const PreviewBlockRow = (props: { block: Block }) => {
           class="preview-edit-ta"
           spellcheck={false}
           rows={1}
-          value={props.block.source.trimEnd()}
+          value={toEditableText(props.block)}
           onFocus={(e) => markTextareaEditingPoint(e.currentTarget)}
           onInput={(e) => {
             autoResize(e.currentTarget);
