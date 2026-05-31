@@ -6,6 +6,7 @@ import {
   pickImageFromFile,
   replaceBlockSource,
 } from "../../store/document";
+import { withBlockTrailing } from "../../markdown/blockEdit";
 import { resolveAssetSrc } from "../../store/assets";
 
 type Props = {
@@ -35,8 +36,8 @@ export const ImageBlockView = (props: Props) => {
     const cur = initial();
     if (!cur) return;
     const next = { ...cur, ...patch };
-    const trailing = props.block.source.endsWith("\n") ? "\n" : "";
-    const md =
+    const md = withBlockTrailing(
+      props.block,
       formatImageMarkdown({
         alt: next.alt,
         src: next.src,
@@ -44,7 +45,8 @@ export const ImageBlockView = (props: Props) => {
         width: next.width,
         height: next.height,
         align: next.align,
-      }) + trailing;
+      }),
+    );
     replaceBlockSource(props.block, md);
   };
 

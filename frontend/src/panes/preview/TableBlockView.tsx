@@ -1,6 +1,7 @@
 import { createMemo, createSignal, Index, Show } from "solid-js";
 import type { Block, MarkdownTable, TableColumnAlignment } from "../../ipc/types";
 import { formatMarkdownTable, normalizeMarkdownTable, parseMarkdownTable } from "../../markdown/table";
+import { withBlockTrailing } from "../../markdown/blockEdit";
 import { replaceBlockSource } from "../../store/document";
 
 type Props = {
@@ -48,8 +49,7 @@ export const TableBlockView = (props: Props) => {
   const [activeCell, setActiveCell] = createSignal<ActiveCell | null>(null);
 
   const commit = (next: MarkdownTable) => {
-    const trailing = props.block.source.endsWith("\n") ? "\n" : "";
-    replaceBlockSource(props.block, formatMarkdownTable(next) + trailing);
+    replaceBlockSource(props.block, withBlockTrailing(props.block, formatMarkdownTable(next)));
   };
 
   const updateCell = (section: CellSection, row: number, col: number, value: string) => {
