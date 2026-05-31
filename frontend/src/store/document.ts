@@ -446,6 +446,14 @@ const setPath = (p: string) => {
   if (historyPos >= 0) history[historyPos] = { ...history[historyPos]!, path: p };
 };
 
+// Decoupled hook so the diff store can snapshot a baseline on open/save without
+// creating an import cycle between document.ts and diff.ts.
+let baselineCaptureHook: (() => void) | null = null;
+export const registerBaselineCapture = (fn: () => void) => {
+  baselineCaptureHook = fn;
+};
+const captureBaseline = () => baselineCaptureHook?.();
+
 const replaceDocument = (
   file: LoadedMarkdownFile,
   activeFilePath: string | null,
@@ -459,6 +467,7 @@ const replaceDocument = (
     setAnnotationsRaw(nextAnnotations);
   });
   resetHistory(file.source, file.path);
+  captureBaseline();
 };
 
 const clampSourceOffset = (offset: number) => {
@@ -1055,6 +1064,7 @@ export const saveFile = async () => {
       setPath(saved.path);
       upsertProjectFile(saved.path);
       setActiveProjectFileRaw(activePathForLoadedFile(saved.path));
+      captureBaseline();
     } catch (error) {
       reportFileError("Save failed", error);
     }
@@ -1072,6 +1082,7 @@ export const saveFile = async () => {
       await writable.write(src);
       await writable.close();
       setPath(handle.name);
+      captureBaseline();
       return;
     } catch (error) {
       if (isAbortError(error)) return;
@@ -1086,6 +1097,7 @@ export const saveFile = async () => {
   const a = Object.assign(document.createElement("a"), { href: url, download: p });
   a.click();
   URL.revokeObjectURL(url);
+  captureBaseline();
 };
 
 // --- native project (.ommd) + exports --------------------------------------

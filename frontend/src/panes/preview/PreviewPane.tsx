@@ -28,6 +28,12 @@ import { TableBlockView } from "./TableBlockView";
 import { extractHeadings, isTocToken, renderTocHtml } from "../../store/outline";
 import { splitInlineMath } from "../../store/mathInline";
 import { setupFootnoteTooltip } from "./footnotes";
+import {
+  useDiffMode,
+  useDiffEntries,
+  useDiffSummary,
+  diffStatusForBlock,
+} from "../../store/diff";
 import "katex/dist/katex.min.css";
 
 const FONT_OPTIONS: { id: PreviewFontFamily; label: string }[] = [
@@ -215,6 +221,16 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
     return !!point && point.pane !== "preview" && isEditingPointInBlock(point, props.block);
   };
 
+  // Diff-mode status classes (added / modified / moved) for this block.
+  const diffClasses = (): Record<string, boolean> => {
+    const entry = diffStatusForBlock(props.block.id);
+    return {
+      "om-diff-added": entry?.status === "added",
+      "om-diff-modified": entry?.status === "modified",
+      "om-diff-moved": entry?.status === "moved",
+    };
+  };
+
   const markEditingPoint = (offset = 0) => {
     setEditingPoint({
       pane: "preview",
@@ -351,7 +367,7 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
       <div
         class="preview-row"
         data-block-id={props.block.id}
-        classList={{ "editing-point": isEditingPoint() }}
+        classList={{ "editing-point": isEditingPoint(), ...diffClasses() }}
         onFocusIn={() => markEditingPoint()}
         onFocusOut={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -381,7 +397,7 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
       <div
         class="preview-row"
         data-block-id={props.block.id}
-        classList={{ "editing-point": isEditingPoint() }}
+        classList={{ "editing-point": isEditingPoint(), ...diffClasses() }}
         onFocusIn={() => markEditingPoint()}
         onFocusOut={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -405,7 +421,7 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
     <div
       class="preview-row"
       data-block-id={props.block.id}
-      classList={{ "editing-point": isEditingPoint() }}
+      classList={{ "editing-point": isEditingPoint(), ...diffClasses() }}
       onFocusIn={() => markEditingPoint()}
       onFocusOut={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -456,6 +472,35 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
           onPick={(snip) => insertBlockAfter(props.block, snip)}
         />
       </div>
+    </div>
+  );
+};
+
+// ── diff ghost row (a block that was removed since the baseline) ──────────────
+const PreviewGhostRow = (props: { block: Block }) => {
+  let ref: HTMLDivElement | undefined;
+  createEffect(() => {
+    if (ref) ref.innerHTML = props.block.html;
+  });
+  return (
+    <div class="preview-row om-diff-removed" aria-label="Removed block">
+      <div ref={ref} class="preview-block om-diff-ghost" />
+    </div>
+  );
+};
+
+// ── diff summary banner ──────────────────────────────────────────────────────
+const DiffSummaryBanner = () => {
+  const summary = useDiffSummary;
+  return (
+    <div class="om-diff-summary" role="status">
+      <span class="om-diff-summary-title">Changes vs. last saved</span>
+      <span class="om-diff-summary-added">+{summary().added}</span>
+      <span class="om-diff-summary-removed">−{summary().removed}</span>
+      <span class="om-diff-summary-modified">~{summary().modified}</span>
+      <Show when={summary().moved > 0}>
+        <span class="om-diff-summary-moved">⇄{summary().moved}</span>
+      </Show>
     </div>
   );
 };
@@ -663,10 +708,34 @@ export const PreviewPane = (props: PaneProps) => {
         onClick={handlePreviewClick}
         tabIndex={0}
       >
+        <Show when={useDiffMode()()}>
+          <DiffSummaryBanner />
+        </Show>
         <div class="preview-document">
-          <Index each={doc().blocks}>
-            {(block, index) => <PreviewBlockRow block={block()} index={index} />}
-          </Index>
+          <Show
+            when={useDiffMode()()}
+            fallback={
+              <Index each={doc().blocks}>
+                {(block, index) => <PreviewBlockRow block={block()} index={index} />}
+              </Index>
+            }
+          >
+            <Index each={useDiffEntries()}>
+              {(entry) => {
+                const e = entry();
+                if (e.status === "removed" && e.oldBlock) {
+                  return <PreviewGhostRow block={e.oldBlock} />;
+                }
+                const id = e.newBlock?.id;
+                const live = doc().blocks.findIndex((b) => b.id === id);
+                return (
+                  <Show when={live >= 0}>
+                    <PreviewBlockRow block={doc().blocks[live]!} index={live} />
+                  </Show>
+                );
+              }}
+            </Index>
+          </Show>
         </div>
         <Show when={dragOver()}>
           <div class="preview-drop-overlay">Drop image to insert</div>

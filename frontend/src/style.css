@@ -2067,3 +2067,74 @@ html, body, #root {
 .om-fn-tooltip.visible {
   opacity: 1;
 }
+
+/* ── Block-level Diff Overlay ──────────────────────────────────────────────── */
+
+.om-diff-added {
+  position: relative;
+  border-left: 3px solid var(--green, #22c55e);
+  background: color-mix(in srgb, var(--green, #22c55e) 8%, transparent);
+}
+.om-diff-removed {
+  position: relative;
+  border-left: 3px solid var(--red, #ef4444);
+  background: color-mix(in srgb, var(--red, #ef4444) 8%, transparent);
+  opacity: 0.6;
+}
+.om-diff-modified {
+  position: relative;
+  border-left: 3px solid var(--amber, #f59e0b);
+  background: color-mix(in srgb, var(--amber, #f59e0b) 8%, transparent);
+}
+.om-diff-moved {
+  position: relative;
+  border-left: 3px solid var(--blue, #3b82f6);
+  background: color-mix(in srgb, var(--blue, #3b82f6) 8%, transparent);
+}
+
+/* Ghost placeholder for removed blocks injected in diff mode */
+.om-diff-ghost {
+  padding: 0.4rem 0.75rem;
+  margin: 0.25rem 0;
+  border-left: 3px solid var(--red, #ef4444);
+  background: color-mix(in srgb, var(--red, #ef4444) 6%, transparent);
+  opacity: 0.55;
+  font-style: italic;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+  border-radius: 4px;
+  white-space: pre-wrap;
+}
+
+/* Diff summary badge */
+.om-diff-summary {
+  display: inline-flex;
+  gap: 0.5rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 4px;
+  background: var(--bg-pane-alt);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+}
+.om-diff-summary-added { color: var(--green, #22c55e); }
+.om-diff-summary-removed { color: var(--red, #ef4444); }
+.om-diff-summary-modified { color: var(--amber, #f59e0b); }
+.om-diff-summary-moved { color: var(--blue, #3b82f6); }
+.om-diff-summary-title { color: var(--fg-dim); margin-right: 0.25rem; }
+.om-diff-summary {
+  margin: 0 0 0.5rem;
+  align-items: center;
+}
+
+/* Word-level inline diff tokens */
+.om-diff-word-added {
+  background: color-mix(in srgb, var(--green, #22c55e) 25%, transparent);
+  text-decoration: none;
+}
+.om-diff-word-removed {
+  background: color-mix(in srgb, var(--red, #ef4444) 20%, transparent);
+  text-decoration: line-through;
+  opacity: 0.7;
+}

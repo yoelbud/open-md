@@ -43,6 +43,7 @@ import { exportHtmlAction, copyAsHtmlAction } from "../export/htmlExportAction";
 import { exportDocxAction } from "../export/docxExportAction";
 import { exportSlidesAction } from "../export/slidesExportAction";
 import { THEME_PRESETS, setTheme, useThemeId } from "../store/theme";
+import { toggleDiffMode, useDiffMode } from "../store/diff";
 
 export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] => {
   const vis = usePaneVisible();
@@ -55,6 +56,7 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
   const scrollSyncOn = useScrollSync();
   const spellcheckOn = useSpellcheck();
   const currentTheme = useThemeId();
+  const diffModeOn = useDiffMode();
 
   const insertItems = BLOCK_TEMPLATES.map((t) => ({
     kind: "action" as const,
@@ -191,6 +193,13 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
           label: "Spellcheck",
           checked: () => spellcheckOn(),
           action: toggleSpellcheck,
+        },
+        {
+          kind: "check",
+          label: "Show Changes (Diff)",
+          shortcut: "Alt+G",
+          checked: () => diffModeOn(),
+          action: toggleDiffMode,
         },
         { kind: "sep" },
         {
