@@ -3,6 +3,7 @@ import type { Block, MarkdownTable, TableColumnAlignment } from "../../ipc/types
 import { formatMarkdownTable, normalizeMarkdownTable, parseMarkdownTable } from "../../markdown/table";
 import { withBlockTrailing } from "../../markdown/blockEdit";
 import { replaceBlockSource } from "../../store/document";
+import { useSpellcheck } from "../../store/spellcheck";
 import {
   addColumn as modelAddColumn,
   addRow as modelAddRow,
@@ -49,6 +50,7 @@ export const TableBlockView = (props: Props) => {
     ),
   );
   const [activeCell, setActiveCell] = createSignal<ActiveCell | null>(null);
+  const spellcheck = useSpellcheck();
 
   const commit = (next: MarkdownTable) => {
     replaceBlockSource(props.block, withBlockTrailing(props.block, formatMarkdownTable(next)));
@@ -173,6 +175,7 @@ export const TableBlockView = (props: Props) => {
                   >
                     <input
                       value={cell()}
+                      spellcheck={spellcheck()}
                       aria-label={`Header ${col + 1}`}
                       onFocus={() => setActiveCell({ section: "header", row: 0, col })}
                       onInput={(e) => updateCell("header", 0, col, e.currentTarget.value)}
@@ -204,6 +207,7 @@ export const TableBlockView = (props: Props) => {
                         >
                           <input
                             value={cell()}
+                            spellcheck={spellcheck()}
                             aria-label={`Row ${rowIndex + 1}, column ${col + 1}`}
                             onFocus={() => setActiveCell({ section: "body", row: rowIndex, col })}
                             onInput={(e) => updateCell("body", rowIndex, col, e.currentTarget.value)}

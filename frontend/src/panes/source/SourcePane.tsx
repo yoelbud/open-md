@@ -12,6 +12,7 @@ import {
   useFocusMode,
   insertBlockAfter,
 } from "../../store/document";
+import { useSpellcheck } from "../../store/spellcheck";
 import { FindReplaceBar } from "../../components/FindReplaceBar";
 import {
   buildLineOffsets,
@@ -50,6 +51,7 @@ export const SourcePane = (props: PaneProps) => {
   const typewriterMode = useTypewriterMode();
   const focusMode = useFocusMode();
   const scrollSyncEnabled = useScrollSync();
+  const spellcheck = useSpellcheck();
   const doc = useDocument;
   const [scrollTop, setScrollTop] = createSignal(0);
   const [metrics, setMetrics] = createSignal<SourceMetrics>(DEFAULT_SOURCE_METRICS);
@@ -310,7 +312,7 @@ export const SourcePane = (props: PaneProps) => {
         <textarea
           ref={ta}
           class="source-editor-textarea mono"
-          spellcheck={false}
+          spellcheck={spellcheck()}
           value={source()}
           style={focusMode() ? {
             "--focus-cursor-line": String(cursorLine()),

@@ -37,6 +37,7 @@ import {
   useStatusBarVisible,
   useTypewriterMode,
 } from "../store/document";
+import { toggleSpellcheck, useSpellcheck } from "../store/spellcheck";
 import { exportPreviewPdf } from "../ipc/previewPdf";
 import { exportHtmlAction, copyAsHtmlAction } from "../export/htmlExportAction";
 import { exportSlidesAction } from "../export/slidesExportAction";
@@ -51,6 +52,7 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
   const focus = useFocusMode();
   const df = useDistractionFree();
   const scrollSyncOn = useScrollSync();
+  const spellcheckOn = useSpellcheck();
   const currentTheme = useThemeId();
 
   const insertItems = BLOCK_TEMPLATES.map((t) => ({
@@ -181,6 +183,12 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
           label: "Scroll sync",
           checked: () => scrollSyncOn(),
           action: toggleScrollSync,
+        },
+        {
+          kind: "check",
+          label: "Spellcheck",
+          checked: () => spellcheckOn(),
+          action: toggleSpellcheck,
         },
         { kind: "sep" },
         {
