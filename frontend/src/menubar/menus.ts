@@ -50,6 +50,7 @@ import { exportPagedHtmlAction } from "../export/pagedExportAction";
 import { THEME_PRESETS, setTheme, useThemeId } from "../store/theme";
 import { toggleDiffMode, useDiffMode } from "../store/diff";
 import { togglePagedMode, usePagedMode } from "../store/pagination";
+import { diffAgainstHead } from "../store/git";
 
 export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] => {
   const vis = usePaneVisible();
@@ -224,6 +225,11 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
           shortcut: "Alt+G",
           checked: () => diffModeOn(),
           action: toggleDiffMode,
+        },
+        {
+          kind: "action",
+          label: "Diff Against Last Commit",
+          action: () => void diffAgainstHead(),
         },
         {
           kind: "check",

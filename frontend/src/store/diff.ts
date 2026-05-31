@@ -32,6 +32,9 @@ registerBaselineCapture(captureDiffBaseline);
 /** Read the current baseline blocks. */
 export const useDiffBaseline = () => baseline;
 
+/** Install an arbitrary set of blocks as the diff baseline (e.g. from git HEAD). */
+export const setDiffBaselineBlocks = (blocks: Block[]) => setBaseline(blocks);
+
 // ── Computed diff ────────────────────────────────────────────────────────────
 
 /** Reactive diff between the baseline and the current document blocks. */

@@ -52,3 +52,15 @@ export const openProjectFolder = () =>
 
 export const loadProjectFile = (path: string) =>
   invokeIfDesktop<LoadedMarkdownFile>("load_project_file", { path });
+
+export interface GitFileStatus {
+  isRepo: boolean;
+  branch: string | null;
+  statusCode: string | null;
+}
+
+export const gitFileStatus = (path: string) =>
+  invokeIfDesktop<GitFileStatus | null>("git_file_status", { path });
+
+export const gitHeadContent = (path: string) =>
+  invokeIfDesktop<string | null>("git_head_content", { path });

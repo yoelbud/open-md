@@ -3,6 +3,7 @@
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use om_engine::{render_document_payload, DocumentPayload};
@@ -61,6 +62,123 @@ enum MarkdownFileError {
     ProjectTooLarge(usize),
 }
 
+// ── Git integration ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitFileStatus {
+    is_repo: bool,
+    branch: Option<String>,
+    status_code: Option<String>,
+}
+
+/// Parses the two-char XY status code from `git status --porcelain` output.
+/// Returns `None` if the output is empty or contains only whitespace.
+fn parse_porcelain_status(output: &str) -> Option<String> {
+    let line = output.lines().find(|l| !l.trim().is_empty())?;
+    if line.len() < 2 {
+        return None;
+    }
+    Some(line[..2].to_string())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
+fn git_file_status(path: String) -> Result<Option<GitFileStatus>, String> {
+    let file_path = Path::new(&path);
+    let dir = file_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_string_lossy()
+        .into_owned();
+
+    // Check if inside a git repo
+    let is_repo = Command::new("git")
+        .args(["-C", &dir, "rev-parse", "--is-inside-work-tree"])
+        .output();
+
+    let Ok(output) = is_repo else {
+        // git binary not found
+        return Ok(None);
+    };
+    if !output.status.success() {
+        // Not a git repo
+        return Ok(None);
+    }
+
+    // Get branch name
+    let branch = Command::new("git")
+        .args(["-C", &dir, "rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+    // Get file status
+    let status_code = Command::new("git")
+        .args(["-C", &dir, "status", "--porcelain", "--", &path])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| parse_porcelain_status(&String::from_utf8_lossy(&o.stdout)));
+
+    Ok(Some(GitFileStatus {
+        is_repo: true,
+        branch,
+        status_code,
+    }))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
+fn git_head_content(path: String) -> Result<Option<String>, String> {
+    let file_path = Path::new(&path);
+    let dir = file_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_string_lossy()
+        .into_owned();
+
+    // Get repo root
+    let root_output = Command::new("git")
+        .args(["-C", &dir, "rev-parse", "--show-toplevel"])
+        .output();
+
+    let Ok(root_output) = root_output else {
+        return Ok(None);
+    };
+    if !root_output.status.success() {
+        return Ok(None);
+    }
+
+    let repo_root = String::from_utf8_lossy(&root_output.stdout)
+        .trim()
+        .to_string();
+    let repo_root_path = Path::new(&repo_root);
+
+    // Compute relative path with forward slashes for git
+    let rel_path = file_path.strip_prefix(repo_root_path).map_or_else(
+        |_| file_path.to_string_lossy().replace('\\', "/"),
+        |p| p.to_string_lossy().replace('\\', "/"),
+    );
+
+    let show_ref = format!("HEAD:{rel_path}");
+    let show_output = Command::new("git")
+        .args(["-C", &dir, "show", &show_ref])
+        .output();
+
+    let Ok(show_output) = show_output else {
+        return Ok(None);
+    };
+    if !show_output.status.success() {
+        return Ok(None);
+    }
+
+    Ok(Some(
+        String::from_utf8_lossy(&show_output.stdout).into_owned(),
+    ))
+}
+
 /// Starts the open-md Tauri desktop application.
 pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
@@ -71,6 +189,8 @@ pub fn run() -> tauri::Result<()> {
             save_markdown_file,
             open_project_folder,
             load_project_file,
+            git_file_status,
+            git_head_content,
         ])
         .run(tauri::generate_context!())
 }
@@ -374,5 +494,35 @@ mod tests {
 
         assert_eq!(relative_paths, ["a.markdown", "b.md", "nested/c.MD"]);
         cleanup(&root);
+    }
+
+    #[test]
+    fn parse_porcelain_status_modified() {
+        assert_eq!(
+            parse_porcelain_status(" M src/main.rs\n"),
+            Some(" M".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_porcelain_status_untracked() {
+        assert_eq!(
+            parse_porcelain_status("?? new-file.md\n"),
+            Some("??".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_porcelain_status_staged() {
+        assert_eq!(
+            parse_porcelain_status("A  freshly-added.md\n"),
+            Some("A ".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_porcelain_status_empty_returns_none() {
+        assert_eq!(parse_porcelain_status(""), None);
+        assert_eq!(parse_porcelain_status("   \n  \n"), None);
     }
 }
