@@ -3,10 +3,13 @@ import type { JSX } from "solid-js";
 import {
   appendImageBlock,
   clearEditingPoint,
+  deleteBlocks,
   ingestImageFile,
   insertBlockAfter,
   insertBlockAtStart,
   isEditingPointInBlock,
+  moveBlocksDown,
+  moveBlocksUp,
   replaceBlockSource,
   resetPreviewTypography,
   setEditingPoint,
@@ -54,6 +57,19 @@ import { isPageBreakBlock, pageFrameClasses } from "../../export/pagination";
 import { StickyHeader } from "../StickyHeader";
 import { setActiveTopBlock, useStickyEnabled } from "../../store/stickyScroll";
 import { useHoveredBlock, setHoveredBlock, clearHoveredBlock } from "../../store/hover";
+import { requestContextMenu } from "../ContextMenu";
+import type { CtxItem } from "../ContextMenu";
+import {
+  turnBlockInto,
+  duplicateBlock,
+  copyBlockReference,
+  addCommentToBlock,
+  blockAsMarkdown,
+  blockAsHtml,
+  blockAsPlainText,
+  copyText,
+} from "../../store/blockActions";
+import type { TurnIntoKind } from "../../store/blockActions";
 import "katex/dist/katex.min.css";
 
 const FONT_OPTIONS: { id: PreviewFontFamily; label: string }[] = [
@@ -237,6 +253,43 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
   let viewRef: HTMLDivElement | undefined;
   let taRef: HTMLTextAreaElement | undefined;
   let renderVersion = 0;
+
+  const blockContextItems = (): CtxItem[] => {
+    const b = props.block;
+    const mode = previewMode();
+    const turnIntoSub: CtxItem[] = (
+      ["paragraph", "h1", "h2", "h3", "quote", "code", "ul", "ol"] as TurnIntoKind[]
+    ).map((kind) => ({
+      label: kind === "paragraph" ? "Paragraph" :
+             kind === "h1" ? "Heading 1" :
+             kind === "h2" ? "Heading 2" :
+             kind === "h3" ? "Heading 3" :
+             kind === "quote" ? "Quote" :
+             kind === "code" ? "Code" :
+             kind === "ul" ? "Bullet list" : "Numbered list",
+      action: () => turnBlockInto(b, kind),
+    }));
+    const copyAsSub: CtxItem[] = [
+      { label: "Markdown", action: () => void copyText(blockAsMarkdown(b)) },
+      { label: "HTML", action: () => void copyText(blockAsHtml(b, mode === "rich")) },
+      { label: "Plain text", action: () => void copyText(blockAsPlainText(blockAsHtml(b, mode === "rich"))) },
+    ];
+    return [
+      { label: "Turn into…", submenu: turnIntoSub },
+      { label: "Copy as…", submenu: copyAsSub },
+      { label: "Copy block reference", separatorBefore: true, action: () => void copyBlockReference(b) },
+      { label: "Add comment", action: () => addCommentToBlock(b) },
+      { label: "Duplicate", separatorBefore: true, action: () => duplicateBlock(b) },
+      { label: "Move up", action: () => moveBlocksUp(new Set([b.id])) },
+      { label: "Move down", action: () => moveBlocksDown(new Set([b.id])) },
+      { label: "Delete", danger: true, separatorBefore: true, action: () => deleteBlocks(new Set([b.id])) },
+    ];
+  };
+
+  const handleContextMenu = (e: MouseEvent) => {
+    e.preventDefault();
+    requestContextMenu({ x: e.clientX, y: e.clientY, items: blockContextItems() });
+  };
 
   const isEditingPoint = () => {
     const point = editingPoint();
@@ -430,6 +483,7 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
         classList={{ "editing-point": isEditingPoint(), "om-hover-peer": useHoveredBlock()() === props.block.id, ...diffClasses() }}
         onMouseEnter={() => setHoveredBlock(props.block.id)}
         onMouseLeave={() => clearHoveredBlock()}
+        onContextMenu={handleContextMenu}
         onFocusIn={() => markEditingPoint()}
         onFocusOut={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -462,6 +516,7 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
         classList={{ "editing-point": isEditingPoint(), "om-hover-peer": useHoveredBlock()() === props.block.id, ...diffClasses() }}
         onMouseEnter={() => setHoveredBlock(props.block.id)}
         onMouseLeave={() => clearHoveredBlock()}
+        onContextMenu={handleContextMenu}
         onFocusIn={() => markEditingPoint()}
         onFocusOut={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -513,6 +568,7 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
       classList={{ "editing-point": isEditingPoint(), "om-hover-peer": useHoveredBlock()() === props.block.id, "om-has-comment": hasComments(), ...diffClasses() }}
       onMouseEnter={() => setHoveredBlock(props.block.id)}
       onMouseLeave={() => clearHoveredBlock()}
+      onContextMenu={handleContextMenu}
       onFocusIn={() => markEditingPoint()}
       onFocusOut={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {

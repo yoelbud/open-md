@@ -5,6 +5,7 @@ import { IrPane } from "./panes/ir/IrPane";
 import { PreviewPane } from "./panes/preview/PreviewPane";
 import { PrintPreview } from "./panes/preview/PrintPreview";
 import { MarkToolbar } from "./panes/MarkToolbar";
+import { ContextMenu } from "./panes/ContextMenu";
 import { ProjectSidebar } from "./panes/project/ProjectSidebar";
 import { OutlinePanel } from "./panes/outline/OutlinePanel";
 import { CommentsPanel } from "./panes/comments/CommentsPanel";
@@ -412,6 +413,7 @@ export const App = () => {
     </div>
     <PrintPreview />
     <MarkToolbar />
+    <ContextMenu />
     <CommandPalette commands={commands()} open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
     <CustomCssModal open={customCssOpen()} onClose={() => setCustomCssOpen(false)} />
     </>
