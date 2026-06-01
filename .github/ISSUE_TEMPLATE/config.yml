@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Roadmap & feature status
+    url: https://github.com/yoelbud/open-md/blob/main/ROADMAP.md
+    about: Check what is shipped or planned before filing. Ask the Feature Scout agent for the next pick.
+  - name: Contributing & dev loop
+    url: https://github.com/yoelbud/open-md/blob/main/CONTRIBUTING.md
+    about: Setup, quality gates, and the agentic development workflow.

@@ -1,0 +1,54 @@
+name: Assign Copilot to issues
+
+# When an issue is labeled `copilot`, hand it to the Copilot coding agent so it
+# opens a pull request. Requires the Copilot coding agent to be enabled for the
+# repository; the job is best-effort and never fails the workflow if it is not.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  assign:
+    name: Assign to Copilot coding agent
+    if: github.event.label.name == 'copilot'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Assign Copilot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+        run: |
+          set -euo pipefail
+
+          # Find the Copilot coding-agent actor that can be assigned in this repo.
+          BOT_ID=$(gh api graphql -f query='
+            query($owner:String!,$repo:String!){
+              repository(owner:$owner,name:$repo){
+                suggestedActors(capabilities:[CAN_BE_ASSIGNED],first:100){
+                  nodes{ login __typename ... on Bot { id } ... on User { id } }
+                }
+              }
+            }' -F owner="$OWNER" -F repo="$REPO" \
+            --jq '.data.repository.suggestedActors.nodes[] | select(.login=="copilot-swe-agent") | .id')
+
+          if [ -z "${BOT_ID:-}" ]; then
+            echo "Copilot coding agent is not available for this repository; skipping."
+            exit 0
+          fi
+
+          gh api graphql -f query='
+            mutation($assignableId:ID!,$actorId:ID!){
+              replaceActorsForAssignable(input:{assignableId:$assignableId, actorIds:[$actorId]}){
+                assignable { ... on Issue { number } }
+              }
+            }' -F assignableId="$ISSUE_NODE_ID" -F actorId="$BOT_ID"
+
+          echo "Requested Copilot coding agent on the issue."

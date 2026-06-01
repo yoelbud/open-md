@@ -11,8 +11,9 @@ only the changed blocks, never the whole document.
 
 ## Status
 
-Pre-alpha. Currently at **M0 — skeleton** (see [`plan.md`](plan.md) in the
-session workspace for the full roadmap).
+Alpha (`0.1.0-alpha.2`). The core three-pane pipeline and a broad feature set
+are in place; see [`ROADMAP.md`](ROADMAP.md) for the authoritative list of what
+is **shipped** versus **planned**, and for how to pick the next feature.
 
 ## Stack
 
@@ -82,6 +83,14 @@ blocks, covering:
 Regression guards also run as part of `cargo test` (Rust) and `npm test`
 (frontend), asserting that the pipeline stays within generous wall-clock
 budgets and does not exhibit quadratic scaling.
+
+## Contributing & agentic development
+
+This repo is set up for agent-assisted development. Start with
+[`AGENTS.md`](AGENTS.md) (tool-neutral entry point) and
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the dev loop, quality gates, and the
+specialist agents under [`.github/agents/`](.github/agents). Run every CI gate
+locally in one command with `cargo xtask ci`.
 
 ## License
 

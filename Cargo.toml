@@ -6,6 +6,7 @@ members = [
     "crates/om-engine",
     "crates/om-wasm",
     "crates/om-app",
+    "crates/xtask",
 ]
 
 [workspace.package]
