@@ -1,4 +1,4 @@
-import { createSignal, createMemo, batch } from "solid-js";
+import { createSignal, createMemo, createEffect, batch } from "solid-js";
 import type {
   Annotations,
   Block,
@@ -21,6 +21,15 @@ import {
 import type { LoadedMarkdownFile, ProjectFile, ProjectPayload } from "../ipc/desktop";
 import { parseDocument } from "../ipc/runtime";
 import { storeAsset } from "./assets";
+import {
+  EXAMPLE_FILES,
+  EXAMPLE_PROJECT_FILES,
+  EXAMPLE_ROOT,
+  examplePath,
+  getExampleFile,
+  isExamplePath,
+} from "./exampleProject";
+import { recordRecent } from "./recents";
 
 export const PANE_IDS = ["source", "ir", "preview"] as const;
 export type PaneId = (typeof PANE_IDS)[number];
@@ -48,6 +57,23 @@ const DEFAULT_PANE_SIZES: Record<PaneId, number> = {
   ir: 1,
   preview: 1,
 };
+
+// Clean first-run defaults: a single Preview-only page. Source (Ctrl+1) and the
+// developer-oriented IR pane (Ctrl+2) stay one click away but start hidden so a
+// fresh launch is calm and uncluttered. Preview leads the order so revealing
+// the other panes slots them in to its right.
+const INITIAL_PANE_ORDER: PaneId[] = ["preview", "source", "ir"];
+const INITIAL_PANE_VISIBLE: Record<PaneId, boolean> = {
+  source: false,
+  ir: false,
+  preview: true,
+};
+const INITIAL_PANE_SIZES: Record<PaneId, number> = {
+  source: 1,
+  ir: 1,
+  preview: 1,
+};
+
 const UNTITLED_PATH = "(untitled).md";
 
 export const PANE_SIZE_MIN = 0.35;
@@ -136,151 +162,18 @@ export const canUndo = () => historyPos > 0;
 export const canRedo = () => historyPos < history.length - 1;
 
 // --- initial content -------------------------------------------------------
+// A fresh launch starts empty so the Welcome screen can offer clean ways in.
+// The bundled example project lives in store/exampleProject.ts and is only
+// loaded when the user explicitly opens it.
 
-const SAMPLE = `# Welcome to open-md
-
-open-md is a snappy local Markdown editor with synchronized **Source**, **IR**,
-and **Preview** panes that only re-render the blocks you actually change. This
-page shows off everything the editor can render — including rich, *word-like*
-features that live in the IR, never in your Markdown text.
-
-Switch the Preview between **Rich** and **Markdown** with the toggle in its
-toolbar: Rich shows the polished document, Markdown shows the exact standard
-Markdown that gets exported.
-
-## Rich inline text
-
-Beyond the usual **bold**, *italic*, ~~strikethrough~~, and \`inline code\`,
-open-md can highlight a phrase, tint words with any color, and paint a
-colored badge — yet the exported Markdown stays perfectly clean.
-
-The rich formatting above is stored as IR annotations (character ranges +
-marks), so a plain Markdown reader sees ordinary words while open-md paints
-them.
-
-## Callouts
-
-Callouts use GitHub's alert syntax and render as colored, iconified panels.
-They are standard block quotes, so they degrade gracefully in Markdown mode.
-
-> [!NOTE]
-> Callouts are just block quotes with a \`[!KIND]\` marker, so they round-trip
-> as ordinary Markdown everywhere else.
-
-> [!TIP] Custom titles
-> Add text after the marker to override the default title.
-
-> [!IMPORTANT]
-> The block kind is stored in the IR — open the IR pane to see it labelled
-> \`callout\`.
-
-> [!WARNING]
-> Editing the marker line changes the callout's color and icon.
-
-> [!CAUTION]
-> Removing the marker turns it back into a plain block quote.
-
-## Lists and tasks
-
-1. ordered steps
-2. with **inline** formatting
-3. and IR-backed highlights
-
-- bullets too
-- nested ideas
-- with a highlighted phrase
-
-- [x] segmenter in Rust (\`crates/om-core\`)
-- [x] per-block renderer (\`crates/om-render\`)
-- [ ] your next great document
-
-## Tables
-
-| Feature      | Status        | Notes                         |
-| :----------- | :-----------: | ----------------------------: |
-| Callouts     | ✅ done       | five severities               |
-| Annotations  | ✅ done       | highlight + color, in the IR  |
-| Code labels  | ✅ done       | language shown in the chrome  |
-
-## Code
-
-\`\`\`rust
-fn main() {
-    // Fenced code blocks show their language in the header.
-    println!("hello, open-md");
-}
-\`\`\`
-
-## Diagrams
-
-\`\`\`mermaid
-graph LR
-    Source --> IR
-    IR --> Preview
-    Preview --> Source
-\`\`\`
-
----
-
-> A plain block quote (no marker) still renders as a classic quote, with
-> **bold**, *italic*, and a [link](https://example.com).
-`;
-
-const [source, setSourceRaw] = createSignal(SAMPLE);
+const [source, setSourceRaw] = createSignal("");
 const [path, setPathRaw] = createSignal(UNTITLED_PATH);
 
 // --- IR annotation layer (rich inline formatting) --------------------------
 
-// Locate `needle` within a block's clean source and express it as a character
-// range (matching the Rust segmenter's per-block char offsets).
-const phraseRange = (
-  blockSource: string,
-  needle: string,
-  marks: string[],
-): MarkRange | null => {
-  const idx = blockSource.indexOf(needle);
-  if (idx < 0) return null;
-  const start = Array.from(blockSource.slice(0, idx)).length;
-  const end = start + Array.from(needle).length;
-  return { start, end, marks };
-};
-
-// Build the sample document's annotation layer by locating phrases in the
-// (clean) block sources, so the showcase demonstrates IR-backed highlight and
-// color without any non-standard tokens in the Markdown body.
-const buildDemoAnnotations = (body: string): Annotations => {
-  const blocks = parseDocument(body).blocks;
-  const specs: { contains: string; phrases: { needle: string; marks: string[] }[] }[] = [
-    {
-      contains: "highlight a phrase",
-      phrases: [
-        { needle: "highlight a phrase", marks: ["highlight"] },
-        { needle: "any color", marks: ["fg-purple"] },
-        { needle: "colored badge", marks: ["fg-white", "bg-blue"] },
-        { needle: "perfectly clean", marks: ["fg-green"] },
-      ],
-    },
-    {
-      contains: "with a highlighted phrase",
-      phrases: [{ needle: "highlighted phrase", marks: ["highlight"] }],
-    },
-  ];
-  const blockAnnotations = [];
-  for (const spec of specs) {
-    const index = blocks.findIndex((block) => block.source.includes(spec.contains));
-    if (index < 0) continue;
-    const blockSource = blocks[index]!.source;
-    const ranges = spec.phrases
-      .map((phrase) => phraseRange(blockSource, phrase.needle, phrase.marks))
-      .filter((range): range is MarkRange => range !== null);
-    if (ranges.length) blockAnnotations.push({ index, ranges });
-  }
-  return { blocks: blockAnnotations };
-};
-
 const EMPTY_ANNOTATIONS: Annotations = { blocks: [] };
 
-const [annotations, setAnnotationsRaw] = createSignal<Annotations>(buildDemoAnnotations(SAMPLE));
+const [annotations, setAnnotationsRaw] = createSignal<Annotations>(EMPTY_ANNOTATIONS);
 const [previewMode, setPreviewModeRaw] = createSignal<RenderMode>("rich");
 
 export const useAnnotations = () => annotations;
@@ -475,8 +368,8 @@ const clampSourceOffset = (offset: number) => {
   return Math.min(source().length, Math.max(0, Math.trunc(offset)));
 };
 
-// Seed history with the initial document.
-resetHistory(SAMPLE, UNTITLED_PATH);
+// Seed history with the initial (empty) document.
+resetHistory("", UNTITLED_PATH);
 
 export const undo = () => {
   if (!canUndo()) return;
@@ -508,6 +401,18 @@ export const useProjectFiles = () => projectFiles;
 export const useActiveProjectFile = () => activeProjectFile;
 export const usePreviewSettings = () => previewSettings;
 export const useEditingPoint = () => editingPoint;
+
+// The Welcome screen shows when there is nothing meaningful loaded: an untitled,
+// empty document with no project open. Any open/new/example action changes one
+// of these and dismisses it.
+export const useIsWelcome = () =>
+  createMemo(
+    () =>
+      path() === UNTITLED_PATH &&
+      source().length === 0 &&
+      projectRoot() === null &&
+      activeProjectFile() === null,
+  );
 
 const normalizePathForCompare = (value: string) =>
   value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
@@ -570,6 +475,44 @@ export const loadMarkdownFile = (
 ) => {
   replaceDocument(file, activeFilePath);
   if (activeFilePath) upsertProjectFile(file.path);
+  recordRecent({
+    path: file.path,
+    label: baseName(file.path) || file.path,
+    kind: activeFilePath ? "project" : "file",
+  });
+};
+
+// Load one bundled example document into the editor without touching the
+// filesystem, so it works identically in the browser preview and the desktop
+// build.
+const loadExampleFile = (filePath: string) => {
+  const file = getExampleFile(filePath);
+  if (!file) return;
+  replaceDocument({ path: filePath, source: file.source }, filePath, file.annotations);
+  upsertProjectFile(filePath);
+  recordRecent({ path: filePath, label: `Example: ${file.relativePath}`, kind: "example" });
+};
+
+// Opens the bundled, in-memory example project (showcase + getting started).
+// This is the only place example content enters the app; nothing loads it by
+// default.
+export const openExampleProject = () => {
+  batch(() => {
+    setProjectRootRaw(EXAMPLE_ROOT);
+    setProjectFilesRaw(sortProjectFiles(EXAMPLE_PROJECT_FILES.map(normalizeProjectFile)));
+    setActiveProjectFileRaw(null);
+  });
+  const first = EXAMPLE_FILES[0];
+  if (first) loadExampleFile(examplePath(first.relativePath));
+};
+
+// Clears any open project/folder, returning to a project-less state.
+export const closeProject = () => {
+  batch(() => {
+    setProjectRootRaw(null);
+    setProjectFilesRaw([]);
+    setActiveProjectFileRaw(null);
+  });
 };
 
 export const setEditingPoint = (point: EditingPoint) => {
@@ -609,15 +552,13 @@ export const useDocument = createMemo<DocumentPayload>(() => {
 // --- pane visibility -------------------------------------------------------
 
 const [visible, setVisible] = createSignal<Record<PaneId, boolean>>({
-  source: true,
-  ir: true,
-  preview: true,
+  ...INITIAL_PANE_VISIBLE,
 });
-const [paneOrder, setPaneOrder] = createSignal<PaneId[]>([...DEFAULT_PANE_ORDER]);
+const [paneOrder, setPaneOrder] = createSignal<PaneId[]>([...INITIAL_PANE_ORDER]);
 const [paneSizes, setPaneSizesRaw] = createSignal<Record<PaneId, number>>(
-  copyPaneSizes(DEFAULT_PANE_SIZES),
+  copyPaneSizes(INITIAL_PANE_SIZES),
 );
-const [activeLayout, setActiveLayout] = createSignal<ActiveLayoutId>("balanced");
+const [activeLayout, setActiveLayout] = createSignal<ActiveLayoutId>("custom");
 
 export const usePaneVisible = () => visible;
 export const usePaneOrder = () => paneOrder;
@@ -712,7 +653,7 @@ export const resizePanePair = (leftId: PaneId, rightId: PaneId, delta: number) =
 
 // --- outline + status bar visibility ---------------------------------------
 
-const [outlineVisible, setOutlineVisible] = createSignal(true);
+const [outlineVisible, setOutlineVisible] = createSignal(false);
 const [statusBarVisible, setStatusBarVisible] = createSignal(true);
 const [commentsVisible, setCommentsVisibleRaw] = createSignal(false);
 
@@ -726,6 +667,100 @@ export const toggleComments = () => setCommentsVisibleRaw((v) => !v);
 const [proofreadVisible, setProofreadVisible] = createSignal(false);
 export const useProofreadVisible = () => proofreadVisible;
 export const toggleProofread = () => setProofreadVisible((v) => !v);
+
+// --- layout persistence ----------------------------------------------------
+// Remember the user's chrome between launches so returning power users keep
+// their panes, while a first run still gets the clean Preview-only defaults.
+
+const LAYOUT_STORAGE_KEY = "open-md:layout";
+
+interface PersistedLayout {
+  visible: Record<PaneId, boolean>;
+  order: PaneId[];
+  sizes: Record<PaneId, number>;
+  activeLayout: ActiveLayoutId;
+  outline: boolean;
+  statusBar: boolean;
+}
+
+const layoutStorage = (): Storage | null => {
+  try {
+    return typeof localStorage !== "undefined" ? localStorage : null;
+  } catch {
+    return null;
+  }
+};
+
+const isPaneRecord = (value: unknown): value is Record<PaneId, boolean> =>
+  Boolean(value) &&
+  typeof value === "object" &&
+  PANE_IDS.every((id) => typeof (value as Record<string, unknown>)[id] === "boolean");
+
+const isOrder = (value: unknown): value is PaneId[] =>
+  Array.isArray(value) &&
+  value.length === PANE_IDS.length &&
+  PANE_IDS.every((id) => value.includes(id));
+
+const readPersistedLayout = (): PersistedLayout | null => {
+  const storage = layoutStorage();
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(LAYOUT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedLayout>;
+    if (!isPaneRecord(parsed.visible) || !isOrder(parsed.order)) return null;
+    const sizes = parsed.sizes && typeof parsed.sizes === "object" ? parsed.sizes : INITIAL_PANE_SIZES;
+    return {
+      visible: parsed.visible,
+      order: parsed.order,
+      sizes: copyPaneSizes(sizes as Record<PaneId, number>),
+      activeLayout: (parsed.activeLayout as ActiveLayoutId) ?? "custom",
+      outline: typeof parsed.outline === "boolean" ? parsed.outline : false,
+      statusBar: typeof parsed.statusBar === "boolean" ? parsed.statusBar : true,
+    };
+  } catch {
+    return null;
+  }
+};
+
+let restoringLayout = false;
+
+// Applies any saved layout and starts persisting changes. Call once from the
+// app shell so the reactive effect runs inside a root.
+export const initLayoutPersistence = () => {
+  const saved = readPersistedLayout();
+  if (saved) {
+    restoringLayout = true;
+    batch(() => {
+      setVisible(copyPaneVisibility(saved.visible));
+      setPaneOrder([...saved.order]);
+      setPaneSizesRaw(copyPaneSizes(saved.sizes));
+      setActiveLayout(saved.activeLayout);
+      setOutlineVisible(saved.outline);
+      setStatusBarVisible(saved.statusBar);
+    });
+    restoringLayout = false;
+  }
+
+  createEffect(() => {
+    const snapshot: PersistedLayout = {
+      visible: visible(),
+      order: paneOrder(),
+      sizes: paneSizes(),
+      activeLayout: activeLayout(),
+      outline: outlineVisible(),
+      statusBar: statusBarVisible(),
+    };
+    if (restoringLayout) return;
+    const storage = layoutStorage();
+    if (!storage) return;
+    try {
+      storage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // Ignore storage failures (quota, private mode).
+    }
+  });
+};
 
 // --- scroll sync -----------------------------------------------------------
 
@@ -1330,6 +1365,11 @@ export const openProject = async () => {
 };
 
 export const openProjectFile = async (file: ProjectFile) => {
+  if (isExamplePath(file.path)) {
+    loadExampleFile(file.path);
+    return;
+  }
+
   if (!isDesktopRuntime()) {
     notifyUnavailable("Project files are available in the desktop app.");
     return;
@@ -1340,5 +1380,27 @@ export const openProjectFile = async (file: ProjectFile) => {
     if (loaded) loadMarkdownFile(loaded, file.path);
   } catch (error) {
     reportFileError("Open project file failed", error);
+  }
+};
+
+// Reopen an entry from the Welcome screen's recent list. Example entries load
+// from bundled content; real files load from disk on the desktop build.
+export const openRecent = async (path: string) => {
+  if (isExamplePath(path)) {
+    if (projectRoot() !== EXAMPLE_ROOT) openExampleProject();
+    loadExampleFile(path);
+    return;
+  }
+
+  if (!isDesktopRuntime()) {
+    notifyUnavailable("Reopening recent files is available in the desktop app.");
+    return;
+  }
+
+  try {
+    const loaded = await desktopLoadProjectFile(path);
+    if (loaded) loadMarkdownFile(loaded);
+  } catch (error) {
+    reportFileError("Open recent failed", error);
   }
 };
