@@ -31,7 +31,7 @@ import {
 } from "../../store/imageDrop";
 import { StickyHeader } from "../StickyHeader";
 import { setActiveTopBlock, useStickyEnabled } from "../../store/stickyScroll";
-import { useHoveredBlock, lineOfOffset } from "../../store/hover";
+import { useHoveredBlock, rangeLines } from "../../store/hover";
 
 type PaneProps = {
   layoutControls?: JSX.Element;
@@ -114,23 +114,23 @@ export const SourcePane = (props: PaneProps) => {
     };
   };
 
-  // --- Hover marker: highlight hovered block's line -------------------------
-  const hoverMarkerLine = createMemo(() => {
+  // --- Hover marker: highlight hovered block's full source range -------------
+  const hoverMarkerRange = createMemo(() => {
     const id = useHoveredBlock()();
     if (id == null) return null;
     const b = doc().blocks.find((x) => x.id === id);
     if (!b) return null;
-    return lineOfOffset(source(), b.src_range[0]);
+    return rangeLines(source(), b.src_range[0], b.src_range[1]);
   });
 
   const hoverMarkerStyle = (): JSX.CSSProperties => {
-    const line = hoverMarkerLine();
-    if (line === null) return {};
+    const range = hoverMarkerRange();
+    if (range === null) return {};
     const currentMetrics = metrics();
     return {
-      height: `${currentMetrics.lineHeight}px`,
+      height: `${range.lineCount * currentMetrics.lineHeight}px`,
       transform: `translateY(${
-        currentMetrics.paddingTop + line * currentMetrics.lineHeight - scrollTop()
+        currentMetrics.paddingTop + range.startLine * currentMetrics.lineHeight - scrollTop()
       }px)`,
     };
   };
@@ -335,7 +335,7 @@ export const SourcePane = (props: PaneProps) => {
         <Show when={markerLine() !== null}>
           <div class="source-edit-marker" style={markerStyle()} aria-hidden="true" />
         </Show>
-        <Show when={hoverMarkerLine() !== null}>
+        <Show when={hoverMarkerRange() !== null}>
           <div class="source-hover-marker" style={hoverMarkerStyle()} aria-hidden="true" />
         </Show>
         <textarea

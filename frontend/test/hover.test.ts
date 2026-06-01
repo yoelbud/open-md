@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { lineOfOffset, useHoveredBlock, setHoveredBlock, clearHoveredBlock } from "../src/store/hover";
+import { lineOfOffset, rangeLines, useHoveredBlock, setHoveredBlock, clearHoveredBlock } from "../src/store/hover";
 
 describe("lineOfOffset", () => {
   it("offset 0 → line 0", () => {
@@ -23,6 +23,38 @@ describe("lineOfOffset", () => {
   it("offset beyond length clamps to last line", () => {
     const src = "a\nb\nc";
     expect(lineOfOffset(src, 999)).toBe(2);
+  });
+});
+
+describe("rangeLines", () => {
+  it("single-line block (lineCount 1)", () => {
+    const src = "hello\nworld\nfoo";
+    // Block occupies bytes 0..5 (just "hello")
+    expect(rangeLines(src, 0, 5)).toEqual({ startLine: 0, lineCount: 1 });
+  });
+
+  it("block spanning 3 lines", () => {
+    const src = "line0\nline1\nline2\nline3";
+    // bytes 0..17 covers line0, line1, line2
+    expect(rangeLines(src, 0, 17)).toEqual({ startLine: 0, lineCount: 3 });
+  });
+
+  it("range at start of doc", () => {
+    const src = "abc\ndef";
+    expect(rangeLines(src, 0, 3)).toEqual({ startLine: 0, lineCount: 1 });
+  });
+
+  it("end clamped beyond source length", () => {
+    const src = "a\nb\nc";
+    expect(rangeLines(src, 0, 999)).toEqual({ startLine: 0, lineCount: 3 });
+  });
+
+  it("returns null when start exceeds source length", () => {
+    expect(rangeLines("abc", 10, 15)).toBeNull();
+  });
+
+  it("empty source with start=0 end=0", () => {
+    expect(rangeLines("", 0, 0)).toEqual({ startLine: 0, lineCount: 1 });
   });
 });
 

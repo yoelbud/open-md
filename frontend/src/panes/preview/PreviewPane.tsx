@@ -35,6 +35,7 @@ import {
 import { splitInlineMath } from "../../store/mathInline";
 import { setupFootnoteTooltip } from "./footnotes";
 import { setupHoverPreviews } from "./hoverPreview";
+import { setupHeadingAnchors } from "./headingAnchor";
 import {
   buildAnchorMap,
   parseAnchor,
@@ -744,6 +745,13 @@ export const PreviewPane = (props: PaneProps) => {
     if (!previewBodyRef) return;
     const cleanupHover = setupHoverPreviews(previewBodyRef);
     onCleanup(cleanupHover);
+  });
+
+  // Set up heading permalink affordance (# button on hover).
+  createEffect(() => {
+    if (!previewBodyRef) return;
+    const cleanupAnchors = setupHeadingAnchors(previewBodyRef);
+    onCleanup(cleanupAnchors);
   });
 
   const previewStyle = () => ({

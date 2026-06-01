@@ -1019,6 +1019,35 @@ html, body, #root {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
+/* Heading permalink affordance */
+.om-head-anchor {
+  position: absolute;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--fg-dim);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 10;
+  transition: background 0.15s, color 0.15s;
+}
+.om-head-anchor.visible {
+  display: flex;
+}
+.om-head-anchor:hover {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--accent);
+}
+
 /* Find & Replace bar */
 .find-replace-bar {
   display: flex;
