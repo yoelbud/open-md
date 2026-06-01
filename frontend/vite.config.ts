@@ -31,7 +31,7 @@ export function parse_document_json(_source, _path) {
 
 export default defineConfig({
   base: process.env.VITE_BASE_PATH ?? "/",
-  plugins: [wasmStubPlugin(), solid()],
+  plugins: [wasmStubPlugin(), solid(process.env.VITEST ? { hot: false } : {})],
   server: {
     port: 1420,
     strictPort: true,
