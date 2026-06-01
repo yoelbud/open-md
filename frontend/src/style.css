@@ -555,6 +555,58 @@
   border-color: color-mix(in srgb, var(--accent) 70%, #fff);
   box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 22%, transparent);
 }
+
+/* ── Mode switcher (primary workflow control) ───────────────────────────── */
+.mode-switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: color-mix(in srgb, var(--bg-pane) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--elevation-1);
+}
+.mode-btn {
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-3);
+  height: var(--control-h-md);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  cursor: pointer;
+  transition:
+    background var(--dur-base) var(--ease-standard),
+    border-color var(--dur-base) var(--ease-standard),
+    color var(--dur-base) var(--ease-standard);
+}
+.mode-btn:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.mode-btn.active {
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  border-color: color-mix(in srgb, var(--accent) 70%, #fff);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.mode-btn:focus-visible,
+.pane-toggles button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Demote the raw pane toggles to a subtle "advanced" affordance next to modes. */
+.titlebar-controls .pane-toggles {
+  opacity: 0.78;
+  transform: scale(0.94);
+}
+.titlebar-controls .pane-toggles:hover {
+  opacity: 1;
+}
 .layout-custom {
   padding: 0 8px;
   color: var(--fg-dim);
@@ -682,7 +734,64 @@
   --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --serif: "Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+
+  /* ── Spacing scale (4px rhythm) ──────────────────────────────────────── */
+  --space-0: 0;
+  --space-1: 0.25rem; /* 4 */
+  --space-2: 0.5rem;  /* 8 */
+  --space-3: 0.75rem; /* 12 */
+  --space-4: 1rem;    /* 16 */
+  --space-5: 1.5rem;  /* 24 */
+  --space-6: 2rem;    /* 32 */
+  --space-7: 3rem;    /* 48 */
+  --space-8: 4rem;    /* 64 */
+
+  /* ── Type scale ──────────────────────────────────────────────────────── */
+  --text-xs: 0.6875rem;  /* 11 */
+  --text-sm: 0.8125rem;  /* 13 */
+  --text-base: 0.9375rem;/* 15 */
+  --text-md: 1rem;       /* 16 */
+  --text-lg: 1.25rem;    /* 20 */
+  --text-xl: 1.5rem;     /* 24 */
+  --text-2xl: 2rem;      /* 32 */
+  --text-3xl: 2.75rem;   /* 44 */
+  --leading-tight: 1.2;
+  --leading-snug: 1.4;
+  --leading-normal: 1.6;
+
+  /* ── Radii (extends --radius-md / --radius-lg above) ─────────────────── */
+  --radius-sm: 5px;
+  --radius-pill: 999px;
+
+  /* ── Elevation ───────────────────────────────────────────────────────── */
+  --elevation-1: 0 1px 2px rgba(0,0,0,0.18);
+  --elevation-2: 0 4px 14px rgba(0,0,0,0.24);
+  --elevation-3: 0 12px 32px rgba(0,0,0,0.30);
+
+  /* ── Control sizing ──────────────────────────────────────────────────── */
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-lg: 38px;
+
+  /* ── Motion ──────────────────────────────────────────────────────────── */
+  --dur-fast: 90ms;
+  --dur-base: 160ms;
+  --dur-slow: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1.2);
   color-scheme: dark;
+}
+
+/* Respect users who prefer reduced motion: neutralize transitions/animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ─── Theme: Light ───────────────────────────────────────────────────────── */
@@ -2983,4 +3092,181 @@ html, body, #root {
 .welcome-recent-remove:hover {
   color: var(--fg);
   background: color-mix(in srgb, var(--border) 40%, transparent);
+}
+/* ─── Presentation mode (live fullscreen deck) ──────────────────────────── */
+.presentation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%),
+    var(--bg);
+  animation: presentation-fade var(--dur-base) var(--ease-standard);
+}
+@keyframes presentation-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.presentation-stage {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: var(--space-7) var(--space-8);
+}
+.presentation-slide {
+  width: min(1100px, 92vw);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-7);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-3);
+  font-size: var(--text-lg);
+  line-height: var(--leading-normal);
+}
+.presentation-slide > div { margin: 0; }
+.presentation-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+}
+.presentation-zone:disabled { cursor: default; pointer-events: none; }
+.presentation-zone-prev { left: 0; }
+.presentation-zone-next { right: 0; }
+.presentation-progress {
+  height: 4px;
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+}
+.presentation-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+  transition: width var(--dur-base) var(--ease-standard);
+}
+.presentation-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--bg-pane-alt) 80%, transparent);
+  border-top: 1px solid var(--border);
+}
+.presentation-ctl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-lg);
+  height: var(--control-h-lg);
+  font-size: var(--text-xl);
+  line-height: 1;
+  color: var(--fg);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+.presentation-ctl:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.presentation-ctl:disabled { opacity: 0.4; cursor: default; }
+.presentation-counter {
+  min-width: 4.5rem;
+  text-align: center;
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+}
+.presentation-exit-btn {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-4);
+  height: var(--control-h-md);
+  color: var(--fg);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.presentation-exit-btn:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.presentation-ctl:focus-visible,
+.presentation-exit-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.presentation-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--fg-dim);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: center;
+}
+.presentation-empty-hint { font-size: var(--text-sm); }
+
+/* ─── Welcome: Modes front door ─────────────────────────────────────────── */
+.welcome-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.welcome-mode {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  background: color-mix(in srgb, var(--bg-pane) 80%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background var(--dur-base) var(--ease-standard),
+    border-color var(--dur-base) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+.welcome-mode:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  transform: translateY(-1px);
+}
+.welcome-mode:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.welcome-mode-label {
+  font-weight: 600;
+  font-size: var(--text-base);
+  color: var(--fg);
+}
+.welcome-mode-hint {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  line-height: var(--leading-snug);
+}
+.welcome-modes-caption {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: var(--space-4);
 }

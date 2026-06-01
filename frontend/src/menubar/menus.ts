@@ -32,6 +32,11 @@ import {
   toggleTypewriterMode,
   undo,
   useActiveLayout,
+  useActiveMode,
+  WORKSPACE_MODES,
+  applyWorkspaceMode,
+  togglePresentation,
+  usePresentationActive,
   useCommentsVisible,
   useDistractionFree,
   useFocusMode,
@@ -57,6 +62,8 @@ import { toggleSticky, useStickyEnabled } from "../store/stickyScroll";
 export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] => {
   const vis = usePaneVisible();
   const activeLayout = useActiveLayout();
+  const activeMode = useActiveMode();
+  const presentationOn = usePresentationActive();
   const outlineVis = useOutlineVisible();
   const commentsVis = useCommentsVisible();
   const proofreadVis = useProofreadVisible();
@@ -135,6 +142,25 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
           kind: "action",
           label: "Copy as HTML",
           action: () => void copyAsHtmlAction(),
+        },
+      ],
+    },
+    {
+      label: "Modes",
+      items: [
+        ...WORKSPACE_MODES.filter((mode) => mode.id !== "present").map((mode) => ({
+          kind: "check" as const,
+          label: mode.label,
+          checked: () => activeMode() === mode.id,
+          action: () => applyWorkspaceMode(mode.id),
+        })),
+        { kind: "sep" },
+        {
+          kind: "check",
+          label: "Presentation",
+          shortcut: "F5",
+          checked: () => presentationOn(),
+          action: togglePresentation,
         },
       ],
     },

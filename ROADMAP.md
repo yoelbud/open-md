@@ -1,7 +1,14 @@
 # open-md Roadmap
 
-A living backlog of features for **open-md**, the three-pane (Source / IR /
-Preview) Markdown editor with per-block incremental rendering.
+A living backlog of features for **open-md**, a git-native Markdown workspace
+for documenting code repos — and presenting that documentation to others.
+
+The product is organized as a small set of intent-named **Modes** rather than a
+flat pile of features: **Write** (draft prose), **Document** (document your
+repo, git-aware), **Review** (diff/comments/proofreading), and **Present** (live
+slide deck), with **Inspect** as the power/under-the-hood mode that exposes the
+block-level IR. The natural journey is *open a repo/folder → Document it →
+Review it against git → Present it to others.*
 
 This file is the single place to **monitor what's shipped and what's planned**.
 Unchecked items in [Planned / Backlog](#planned--backlog) are candidates — none
@@ -17,18 +24,23 @@ Legend — **Value** ★1–5 · **Effort** S/M/L · checkbox = build status.
 
 Core capabilities already in the product:
 
-- **Three synchronized panes** — Source (CodeMirror 6), IR (block JSON), editable Preview, with per-block incremental re-parse/re-render.
+- **Workspace Modes switcher** — an in-app switcher between **Write**,
+  **Document**, **Review**, **Present**, and **Inspect**, each presenting the
+  panes and tools that fit the task.
+- **Live Presentation mode** *(Present)* — present the current document as a
+  fullscreen, keyboard-navigable slide deck (F5), directly from the app.
+- **Three synchronized panes** *(Inspect / Document)* — Source (CodeMirror 6), IR (block JSON), editable Preview, with per-block incremental re-parse/re-render.
 - **Block kinds** — heading, paragraph, list, task list, code, table, blockquote, callout/admonition, thematic break, image, raw HTML, **front matter**, **math**, unknown.
 - **Rendering** — GFM (pulldown-cmark), **KaTeX math**, **Mermaid diagrams**, footnotes, syntax-highlighted code with copy affordance.
-- **Inline marks** — highlight, foreground/background color (MarkToolbar on selection).
-- **Authoring** — Insert menu, **slash `/` command menu**, in-place preview editing, visual **table editor** (add/del row·col, align, sort), **image block** (sizing/alignment), **paste/drag image → project asset**.
-- **Navigation** — outline panel, `[TOC]`, internal anchors, **sticky heading breadcrumb** pinned across all three panes.
+- **Inline marks** *(Write)* — highlight, foreground/background color (MarkToolbar on selection).
+- **Authoring** *(Write / Document)* — Insert menu, **slash `/` command menu**, in-place preview editing, visual **table editor** (add/del row·col, align, sort), **image block** (sizing/alignment), **paste/drag image → project asset**.
+- **Navigation** *(Document)* — outline panel, `[TOC]`, internal anchors, **sticky heading breadcrumb** pinned across all three panes.
 - **Cross-block** — **block references / transclusion** (`^anchor`, `[[^name]]`, `![[^name]]`), **citations** (`[@key]` + bibliography), comments/annotations.
-- **Review** — **block-level diff**, comments panel, **grammar/style proofreader**, spellcheck, word/char/reading-time stats.
+- **Review** *(Review)* — **block-level diff**, comments panel, **grammar/style proofreader**, spellcheck, word/char/reading-time stats.
 - **Editing modes** — typewriter, focus, distraction-free; layout presets; pane toggles; scroll sync.
 - **Find** — find & replace bar; **command palette**.
 - **Interaction** — **cross-pane hover highlight**; hover previews (block-ref, citation, math LaTeX source); heading permalink affordance; IR↔Source range hover marker; **right-click context menus** (block: turn-into / copy-as / copy-reference / comment / duplicate / move / delete; table cells; text selection).
-- **Files & export** — New/Open File/Open Folder, `.ommd` project format, save/export Markdown, **HTML**, **PDF / paged print**, **DOCX**, **slides** export; **autosave + crash recovery**; **Git integration**.
+- **Files & export** *(Document)* — New/Open File/Open Folder, `.ommd` project format, save/export Markdown, **HTML**, **PDF / paged print**, **DOCX**, **slides** export; **autosave + crash recovery**; **Git integration**.
 - **Appearance** — light/dark themes, **custom CSS** hook, editor font/width settings.
 - **Platform** — Tauri 2 desktop shell; shared Rust engine compiled to WASM for browser preview.
 
@@ -37,7 +49,10 @@ Core capabilities already in the product:
 ## Planned / Backlog
 
 Pick from here. Items are grouped by area; each has a rough value/effort and the
-existing code it would leverage. Check the box when shipped.
+existing code it would leverage. Check the box when shipped. These areas map onto
+the Modes — most authoring/syntax/media items deepen **Write** and **Document**,
+review & knowledge items deepen **Review**, and export/interop items feed
+**Present** and sharing.
 
 ### Authoring & editing
 - [ ] **Inline markdown shortcuts** — type `*x*`→italic, `# `→heading as you type. ★★★★☆ · M · CodeMirror input rules.

@@ -1,19 +1,58 @@
 # open-md
 
-A snappy local Markdown viewer and editor with three synchronized panes:
+**A git-native Markdown workspace for documenting code repos — and presenting
+that documentation to others.** Open a repo or folder, write the docs that live
+beside your code, review them against git, and present them as a live slide deck
+— all in one local, Markdown-native app.
+
+Where VS Code treats Markdown as just another file, Typora gives you a single
+editing surface, and Obsidian builds a personal knowledge vault, open-md is
+built around your **repository**: it is git-aware, fully local (no cloud, no
+account), Markdown-native end to end, and it can **present** your finished doc
+without exporting to another tool.
+
+## Modes — the workflow
+
+Instead of a flat pile of features, open-md is organized into a few
+intent-named **Modes** you switch between as your work changes shape:
+
+| Mode         | What it's for                                                  |
+| ------------ | -------------------------------------------------------------- |
+| **Write**    | Draft prose with a live preview.                               |
+| **Document** | Document your repo: Source + Preview with an outline and project sidebar, git-aware. |
+| **Review**   | Review changes with block-level diff, comments, and proofreading. |
+| **Present**  | Present your document as a live fullscreen slide deck, keyboard-navigable. |
+| **Inspect**  | (Advanced) the block-level IR pane, for looking under the hood. |
+
+The natural journey: **open a repo/folder → Document it → Review it against git
+→ Present it to others.**
+
+## Presentation mode
+
+Press **F5** to turn the current document into a live, fullscreen slide deck —
+navigate with the keyboard and present directly from the app, no export step
+required. This is part of the **Present** mode above.
+
+## Status
+
+Alpha (`0.1.0-alpha.2`). The Modes workflow, the core rendering pipeline, and a
+broad feature set are in place; see [`ROADMAP.md`](ROADMAP.md) for the
+authoritative list of what is **shipped** versus **planned**, and for how to
+pick the next feature.
+
+## Under the hood / power features
+
+Beneath the Modes, open-md is a three-pane pipeline you can open up via the
+**Inspect** mode:
 
 1. **Source** — raw Markdown (CodeMirror 6)
 2. **IR** — block-level intermediate representation (JSON tree)
 3. **Preview** — rendered HTML, editable in place
 
-Performance is the headline feature: edits in any pane re-parse and re-render
-only the changed blocks, never the whole document.
-
-## Status
-
-Alpha (`0.1.0-alpha.2`). The core three-pane pipeline and a broad feature set
-are in place; see [`ROADMAP.md`](ROADMAP.md) for the authoritative list of what
-is **shipped** versus **planned**, and for how to pick the next feature.
+Performance is a core differentiator: edits in any pane re-parse and re-render
+only the changed blocks, never the whole document. The IR pane exposes that
+block-level model directly — a power feature for anyone who wants to see how a
+document is segmented and rendered.
 
 ## Stack
 
