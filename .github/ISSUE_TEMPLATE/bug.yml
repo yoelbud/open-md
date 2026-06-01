@@ -1,0 +1,48 @@
+name: Bug report
+description: Report incorrect behavior in open-md.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Describe the bug and the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal Markdown sample if relevant.
+      placeholder: |
+        1. Open a doc with ...
+        2. Edit block ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Source pane
+        - IR pane
+        - Preview pane
+        - Cross-pane sync
+        - CLI / om-app
+        - Rust core / render
+        - Build / tooling
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: "0.1.0-alpha.2 or git SHA"
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "OS, browser/Tauri, Node/Rust versions"

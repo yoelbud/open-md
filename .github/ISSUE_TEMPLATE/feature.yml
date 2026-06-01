@@ -1,0 +1,53 @@
+name: Feature request
+description: Propose a feature, ideally tied to a ROADMAP item.
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Feature requests are triaged by the **OpenMD Feature Scout**
+        against `ROADMAP.md`. Linking the roadmap entry speeds this up.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What should open-md do, and what problem does it solve?
+    validations:
+      required: true
+  - type: input
+    id: roadmap
+    attributes:
+      label: Related ROADMAP item
+      description: Quote the `- [ ]` line from ROADMAP.md, if any (with its Value/Effort tag).
+      placeholder: "Inline markdown shortcuts — ... ★★★★☆ · M"
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Authoring & editing
+        - Markdown syntax coverage
+        - Tables, images & media
+        - Navigation & structure
+        - Review & knowledge
+        - Context menus
+        - Export / interop
+        - Appearance & i18n
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Pipeline considerations
+      description: >
+        Any impact on the block-scoped pipeline (IR contract, src_range, hashes,
+        per-block render, Rust↔frontend sync)?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I confirmed this is not already in the ROADMAP "Shipped" section.
+          required: true

@@ -3,23 +3,30 @@
 ## Project Shape
 
 - `open-md` is a local Markdown viewer/editor with synchronized Source, IR, and Preview panes.
-- Rust workspace crates live under `crates\`: `om-core` owns segmentation and IR, `om-render` owns per-block HTML rendering, and `om-app` is the CLI/Tauri shell boundary.
+- Rust workspace crates live under `crates\`: `om-core` owns segmentation and IR, `om-render` owns per-block HTML rendering, `om-engine` wires core + render, `om-wasm` exposes the browser bindings, `om-app` is the CLI/Tauri shell boundary, and `xtask` is the local task runner.
 - The frontend is Solid.js, Vite, and TypeScript under `frontend\`.
 - Preserve the block-scoped pipeline: Markdown source -> block IR -> per-block HTML -> editable panes. Do not replace a targeted block update with whole-document reparsing or rerendering unless the task explicitly requires it.
 
 ## Agent Workflow
 
 - Prefer the workspace custom agents for focused work:
+  - `OpenMD Feature Scout` to pick the next ROADMAP item with a kickoff brief.
+  - `OpenMD Maintainer` for implementation work that should coordinate specialists.
   - `OpenMD Testing` for targeted/full tests and failure triage.
   - `OpenMD Linting` for clippy, TypeScript, doc, and build quality gates.
   - `OpenMD Formatting` for formatter checks and `cargo fmt`.
-  - `OpenMD Maintainer` for implementation work that should coordinate specialists.
+  - `OpenMD Review` for high-signal diff review before merge (invariants + IR contract).
+  - `OpenMD Scribe` for docs/ROADMAP/rustdoc status hygiene after a change lands.
+  - `OpenMD Ship` to run the full gate, craft the commit/PR, and open it.
+- Use the `agentic-workflow` skill to coordinate the end-to-end loop and handoffs
+  (scout → maintainer → testing/linting/formatting → review → scribe → ship).
 - Use the `open-md-quality` skill before finishing code changes or when choosing validation commands.
 - Use the `markdown-feature` skill when changing Markdown syntax support, block kinds, IR schema, rendering, editable preview behavior, fixtures, or source/IR/preview synchronization.
 - Keep Rust and frontend contract surfaces in sync when the IR shape changes, especially `BlockKind`, `Block`, and payload fields.
 
 ## Commands
 
+- Run every CI gate locally: `cargo xtask ci` (Rust then frontend). Subsets: `cargo xtask rust`, `cargo xtask frontend`.
 - Rust format check: `cargo fmt --all --check`
 - Rust format apply: `cargo fmt --all`
 - Rust lint: `cargo clippy --workspace --all-targets --locked -- -D warnings`

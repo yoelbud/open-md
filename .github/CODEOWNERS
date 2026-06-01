@@ -1,0 +1,13 @@
+# Code ownership for review routing.
+# Keep this light; update as the team grows.
+
+*                       @yoelbud
+
+# Rust engine
+/crates/                @yoelbud
+
+# Frontend
+/frontend/              @yoelbud
+
+# Agentic infra and CI
+/.github/               @yoelbud
