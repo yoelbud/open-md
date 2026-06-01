@@ -16,6 +16,7 @@ import {
   toggleDistractionFree,
   toggleFocusMode,
   togglePane,
+  togglePresentation,
   toggleTypewriterMode,
   undo,
   useFindOpen,
@@ -113,10 +114,19 @@ export const registerShortcuts = () => {
     }
   };
 
+  const fnHandler = (e: KeyboardEvent) => {
+    if (e.key === "F5" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      togglePresentation();
+    }
+  };
+
   window.addEventListener("keydown", handler);
   window.addEventListener("keydown", altHandler);
+  window.addEventListener("keydown", fnHandler);
   return () => {
     window.removeEventListener("keydown", handler);
     window.removeEventListener("keydown", altHandler);
+    window.removeEventListener("keydown", fnHandler);
   };
 };

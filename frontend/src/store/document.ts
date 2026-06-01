@@ -576,6 +576,7 @@ export const togglePane = (id: PaneId) => {
   batch(() => {
     setVisible(next);
     setActiveLayout("custom");
+    clearActiveMode();
   });
 };
 
@@ -595,6 +596,7 @@ export const resetPaneSizes = () => {
   batch(() => {
     setPaneSizesRaw(copyPaneSizes(DEFAULT_PANE_SIZES));
     setActiveLayout("custom");
+    clearActiveMode();
   });
 };
 
@@ -618,6 +620,7 @@ export const movePaneRelative = (
   batch(() => {
     setPaneOrder(next);
     setActiveLayout("custom");
+    clearActiveMode();
   });
 };
 
@@ -648,6 +651,7 @@ export const resizePanePair = (leftId: PaneId, rightId: PaneId, delta: number) =
       [rightId]: clampPaneSize(nextRight),
     });
     setActiveLayout("custom");
+    clearActiveMode();
   });
 };
 
@@ -668,6 +672,87 @@ const [proofreadVisible, setProofreadVisible] = createSignal(false);
 export const useProofreadVisible = () => proofreadVisible;
 export const toggleProofread = () => setProofreadVisible((v) => !v);
 
+// --- workspace modes -------------------------------------------------------
+// Modes are the product's primary workflow surface: each is an intent-named
+// workspace layered over the existing layout presets that also drives the side
+// panels. Manual pane/panel edits clear the active mode (see clearActiveMode).
+
+export type WorkspaceMode = "write" | "document" | "review" | "present" | "inspect";
+
+export interface WorkspaceModeDef {
+  id: WorkspaceMode;
+  label: string;
+  description: string;
+}
+
+export const WORKSPACE_MODES: WorkspaceModeDef[] = [
+  { id: "write", label: "Write", description: "Draft prose with a live preview." },
+  {
+    id: "document",
+    label: "Document",
+    description: "Document your repo: source, preview, and an outline.",
+  },
+  {
+    id: "review",
+    label: "Review",
+    description: "Review changes with comments and proofreading.",
+  },
+  { id: "present", label: "Present", description: "Present your document as a slide deck." },
+  { id: "inspect", label: "Inspect", description: "Inspect the block-level IR." },
+];
+
+interface ModeLayout {
+  layout: LayoutPresetId;
+  outline: boolean;
+  comments: boolean;
+  proofread: boolean;
+}
+
+const MODE_LAYOUTS: Record<Exclude<WorkspaceMode, "present">, ModeLayout> = {
+  write: { layout: "write", outline: false, comments: false, proofread: false },
+  document: { layout: "balanced", outline: true, comments: false, proofread: false },
+  review: { layout: "review", outline: false, comments: true, proofread: true },
+  inspect: { layout: "inspect", outline: false, comments: false, proofread: false },
+};
+
+const [activeMode, setActiveMode] = createSignal<WorkspaceMode | null>(null);
+export const useActiveMode = () => activeMode;
+
+// Cleared whenever the user hand-tunes panes/panels away from a mode preset.
+const clearActiveMode = () => setActiveMode(null);
+
+const [presentationActive, setPresentationActive] = createSignal(false);
+export const usePresentationActive = () => presentationActive;
+export const openPresentation = () => setPresentationActive(true);
+export const closePresentation = () => {
+  setPresentationActive(false);
+  if (activeMode() === "present") setActiveMode(prePresentMode);
+};
+export const togglePresentation = () => {
+  if (presentationActive()) closePresentation();
+  else applyWorkspaceMode("present");
+};
+
+let prePresentMode: WorkspaceMode | null = null;
+
+export const applyWorkspaceMode = (mode: WorkspaceMode) => {
+  if (mode === "present") {
+    prePresentMode = activeMode() === "present" ? prePresentMode : activeMode();
+    setActiveMode("present");
+    openPresentation();
+    return;
+  }
+  const cfg = MODE_LAYOUTS[mode];
+  batch(() => {
+    applyLayoutPreset(cfg.layout);
+    setOutlineVisible(cfg.outline);
+    setCommentsVisibleRaw(cfg.comments);
+    setProofreadVisible(cfg.proofread);
+    setDistractionFreeRaw(false);
+    setActiveMode(mode);
+  });
+};
+
 // --- layout persistence ----------------------------------------------------
 // Remember the user's chrome between launches so returning power users keep
 // their panes, while a first run still gets the clean Preview-only defaults.
@@ -681,7 +766,12 @@ interface PersistedLayout {
   activeLayout: ActiveLayoutId;
   outline: boolean;
   statusBar: boolean;
+  mode: WorkspaceMode | null;
 }
+
+const WORKSPACE_MODE_IDS = new Set<string>(WORKSPACE_MODES.map((m) => m.id));
+const isWorkspaceMode = (value: unknown): value is WorkspaceMode =>
+  typeof value === "string" && WORKSPACE_MODE_IDS.has(value);
 
 const layoutStorage = (): Storage | null => {
   try {
@@ -717,6 +807,7 @@ const readPersistedLayout = (): PersistedLayout | null => {
       activeLayout: (parsed.activeLayout as ActiveLayoutId) ?? "custom",
       outline: typeof parsed.outline === "boolean" ? parsed.outline : false,
       statusBar: typeof parsed.statusBar === "boolean" ? parsed.statusBar : true,
+      mode: isWorkspaceMode(parsed.mode) ? parsed.mode : null,
     };
   } catch {
     return null;
@@ -738,6 +829,7 @@ export const initLayoutPersistence = () => {
       setActiveLayout(saved.activeLayout);
       setOutlineVisible(saved.outline);
       setStatusBarVisible(saved.statusBar);
+      setActiveMode(saved.mode);
     });
     restoringLayout = false;
   }
@@ -750,6 +842,10 @@ export const initLayoutPersistence = () => {
       activeLayout: activeLayout(),
       outline: outlineVisible(),
       statusBar: statusBarVisible(),
+      // `present` is a transient overlay state, not a persistable workspace.
+      // Persist the underlying mode so a reload doesn't highlight "Present"
+      // with no deck open.
+      mode: activeMode() === "present" ? prePresentMode : activeMode(),
     };
     if (restoringLayout) return;
     const storage = layoutStorage();

@@ -5,7 +5,10 @@ import {
   openFile,
   openProject,
   openRecent,
+  WORKSPACE_MODES,
+  applyWorkspaceMode,
 } from "../store/document";
+import type { WorkspaceMode } from "../store/document";
 import { clearRecents, removeRecent, useRecents } from "../store/recents";
 import type { RecentKind } from "../store/recents";
 
@@ -29,11 +32,19 @@ const formatWhen = (at: number): string => {
 export const WelcomeScreen = () => {
   const recents = useRecents();
 
+  const startInMode = (mode: WorkspaceMode) => {
+    newDocument();
+    applyWorkspaceMode(mode);
+  };
+
   return (
     <div class="welcome" role="region" aria-label="Welcome">
       <div class="welcome-card">
         <h1 class="welcome-title">open-md</h1>
-        <p class="welcome-tagline">A calm, local Markdown editor. Start clean.</p>
+        <p class="welcome-tagline">
+          Document your repo, review it against git, and present it — all local,
+          all Markdown.
+        </p>
 
         <div class="welcome-actions">
           <button type="button" class="welcome-action primary" onClick={() => newDocument()}>
@@ -64,6 +75,22 @@ export const WelcomeScreen = () => {
               <span class="welcome-action-hint">Tour what open-md can do</span>
             </span>
           </button>
+        </div>
+
+        <p class="welcome-modes-caption">Start in a mode</p>
+        <div class="welcome-modes" role="group" aria-label="Start in a workspace mode">
+          <For each={WORKSPACE_MODES}>
+            {(mode) => (
+              <button
+                type="button"
+                class="welcome-mode"
+                onClick={() => startInMode(mode.id)}
+              >
+                <span class="welcome-mode-label">{mode.label}</span>
+                <span class="welcome-mode-hint">{mode.description}</span>
+              </button>
+            )}
+          </For>
         </div>
 
         <Show when={recents().length > 0}>

@@ -4,6 +4,7 @@ import { SourcePane } from "./panes/source/SourcePane";
 import { IrPane } from "./panes/ir/IrPane";
 import { PreviewPane } from "./panes/preview/PreviewPane";
 import { PrintPreview } from "./panes/preview/PrintPreview";
+import { PresentationOverlay } from "./panes/preview/PresentationOverlay";
 import { MarkToolbar } from "./panes/MarkToolbar";
 import { ContextMenu } from "./panes/ContextMenu";
 import { ProjectSidebar } from "./panes/project/ProjectSidebar";
@@ -38,6 +39,9 @@ import {
   useVisiblePanes,
   usePath,
   useSetSource,
+  WORKSPACE_MODES,
+  applyWorkspaceMode,
+  useActiveMode,
 } from "./store/document";
 import type { PaneDropPosition, PaneId, PaneMoveDirection } from "./store/document";
 import { registerShortcuts } from "./ipc/shortcuts";
@@ -77,6 +81,7 @@ export const App = () => {
   const isWelcome = useIsWelcome();
   const projectRoot = useProjectRoot();
   const projectFiles = useProjectFiles();
+  const activeMode = useActiveMode();
   const menus = buildMenus({ onOpenCustomCss: () => setCustomCssOpen(true) });
 
   // Initialize comments reactive persistence
@@ -309,7 +314,27 @@ export const App = () => {
         <span class="titlebar-spacer" />
         <Show when={!isWelcome()}>
           <div class="titlebar-controls">
-            <div class="pane-toggles" role="group" aria-label="Pane visibility">
+            <div class="mode-switcher" role="group" aria-label="Workspace mode">
+              <For each={WORKSPACE_MODES}>
+                {(mode) => (
+                  <button
+                    type="button"
+                    class="mode-btn"
+                    classList={{ active: activeMode() === mode.id }}
+                    aria-pressed={activeMode() === mode.id}
+                    title={mode.description}
+                    onClick={() => applyWorkspaceMode(mode.id)}
+                  >
+                    {mode.label}
+                  </button>
+                )}
+              </For>
+            </div>
+            <div
+              class="pane-toggles"
+              role="group"
+              aria-label="Pane visibility (advanced)"
+            >
               <button
                 type="button"
                 classList={{ active: visible().source }}
@@ -409,6 +434,7 @@ export const App = () => {
       </Show>
     </div>
     <PrintPreview />
+    <PresentationOverlay />
     <MarkToolbar />
     <ContextMenu />
     <CommandPalette commands={commands()} open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
