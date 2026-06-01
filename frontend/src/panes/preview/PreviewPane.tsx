@@ -34,6 +34,7 @@ import {
 } from "../../store/citations";
 import { splitInlineMath } from "../../store/mathInline";
 import { setupFootnoteTooltip } from "./footnotes";
+import { setupHoverPreviews } from "./hoverPreview";
 import {
   buildAnchorMap,
   parseAnchor,
@@ -152,6 +153,7 @@ const renderMathBlocks = async (root: HTMLElement, version: number) => {
     for (const node of nodes) {
       if (!root.isConnected || root.dataset.mermaidVersion !== String(version)) return;
       const tex = node.textContent ?? "";
+      node.setAttribute("data-om-tex", tex);
       try {
         node.innerHTML = katex.renderToString(tex, { displayMode: true, throwOnError: false });
       } catch {
@@ -212,6 +214,7 @@ const renderInlineMath = async (root: HTMLElement, version: number) => {
       } else {
         const span = document.createElement("span");
         span.setAttribute("data-om-math", "inline");
+        span.setAttribute("data-om-tex", seg.value);
         try {
           span.innerHTML = katex.renderToString(seg.value, { displayMode: false, throwOnError: false });
         } catch {
@@ -734,6 +737,13 @@ export const PreviewPane = (props: PaneProps) => {
     if (!previewBodyRef) return;
     const cleanup = setupFootnoteTooltip(previewBodyRef);
     onCleanup(cleanup);
+  });
+
+  // Set up hover preview popovers (block-ref, citation, math).
+  createEffect(() => {
+    if (!previewBodyRef) return;
+    const cleanupHover = setupHoverPreviews(previewBodyRef);
+    onCleanup(cleanupHover);
   });
 
   const previewStyle = () => ({

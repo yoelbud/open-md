@@ -2314,6 +2314,39 @@ html, body, #root {
   opacity: 1;
 }
 
+/* ── Hover Preview Popover ─────────────────────────────────────────────────── */
+
+.om-hover-popover {
+  position: absolute;
+  z-index: 1000;
+  max-width: 340px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-pane-alt);
+  color: var(--fg);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.om-hover-popover.visible {
+  opacity: 1;
+}
+.om-hover-tex {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  padding: 0.15rem 0.35rem;
+  border-radius: 3px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* ── Block-level Diff Overlay ──────────────────────────────────────────────── */
 
 .om-diff-added {
