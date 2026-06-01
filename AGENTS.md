@@ -72,7 +72,7 @@ Or run the gates individually (see `.github/workflows/ci.yml` for the source of 
 ```sh
 # Rust
 cargo fmt --all --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 cargo build --workspace --all-targets --locked
 cargo test --workspace --locked
 cargo doc --workspace --no-deps --locked

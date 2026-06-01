@@ -21,7 +21,16 @@ struct Step {
     args: &'static [&'static str],
     /// Optional working directory, relative to the workspace root.
     cwd: Option<&'static str>,
+    /// Environment variables to set for the child process, for CI parity.
+    env: &'static [(&'static str, &'static str)],
 }
+
+/// Environment that CI applies to every Rust job (`-D warnings` for compiler and
+/// rustdoc). Mirrors the `env:` block in `.github/workflows/ci.yml`.
+const RUST_ENV: &[(&str, &str)] = &[
+    ("RUSTFLAGS", "-D warnings"),
+    ("RUSTDOCFLAGS", "-D warnings"),
+];
 
 /// Name of the npm executable, accounting for the Windows `.cmd` shim.
 const fn npm() -> &'static str {
@@ -40,6 +49,7 @@ fn rust_steps() -> Vec<Step> {
             program: "cargo",
             args: &["fmt", "--all", "--check"],
             cwd: None,
+            env: RUST_ENV,
         },
         Step {
             label: "cargo clippy (deny warnings)",
@@ -48,30 +58,43 @@ fn rust_steps() -> Vec<Step> {
                 "clippy",
                 "--workspace",
                 "--all-targets",
-                "--locked",
                 "--",
                 "-D",
                 "warnings",
             ],
             cwd: None,
+            env: RUST_ENV,
         },
         Step {
             label: "cargo build",
             program: "cargo",
-            args: &["build", "--workspace", "--all-targets", "--locked"],
+            // `xtask` is excluded here only to avoid replacing the running runner
+            // binary on Windows; the alias already compiled it, and CI builds the
+            // full workspace including `xtask`.
+            args: &[
+                "build",
+                "--workspace",
+                "--exclude",
+                "xtask",
+                "--all-targets",
+                "--locked",
+            ],
             cwd: None,
+            env: RUST_ENV,
         },
         Step {
             label: "cargo test",
             program: "cargo",
-            args: &["test", "--workspace", "--locked"],
+            args: &["test", "--workspace", "--exclude", "xtask", "--locked"],
             cwd: None,
+            env: RUST_ENV,
         },
         Step {
             label: "cargo doc",
             program: "cargo",
             args: &["doc", "--workspace", "--no-deps", "--locked"],
             cwd: None,
+            env: RUST_ENV,
         },
     ]
 }
@@ -84,24 +107,28 @@ fn frontend_steps() -> Vec<Step> {
             program: npm(),
             args: &["ci"],
             cwd: Some("frontend"),
+            env: &[],
         },
         Step {
             label: "npm run typecheck",
             program: npm(),
             args: &["run", "typecheck"],
             cwd: Some("frontend"),
+            env: &[],
         },
         Step {
             label: "npm test",
             program: npm(),
             args: &["test"],
             cwd: Some("frontend"),
+            env: &[],
         },
         Step {
             label: "npm run build",
             program: npm(),
             args: &["run", "build"],
             cwd: Some("frontend"),
+            env: &[],
         },
     ]
 }
@@ -113,6 +140,9 @@ fn run_steps(steps: &[Step]) -> bool {
         println!("\n=== {} ===", step.label);
         let mut cmd = Command::new(step.program);
         cmd.args(step.args);
+        for (key, value) in step.env {
+            cmd.env(key, value);
+        }
         if let Some(dir) = step.cwd {
             cmd.current_dir(dir);
         }

@@ -45,10 +45,10 @@ jobs:
           fi
 
           gh api graphql -f query='
-            mutation($assignableId:ID!,$actorIds:[ID!]!){
-              replaceActorsForAssignable(input:{assignableId:$assignableId, actorIds:$actorIds}){
+            mutation($assignableId:ID!,$actorId:ID!){
+              replaceActorsForAssignable(input:{assignableId:$assignableId, actorIds:[$actorId]}){
                 assignable { ... on Issue { number } }
               }
-            }' -F assignableId="$ISSUE_NODE_ID" -F actorIds="$BOT_ID"
+            }' -F assignableId="$ISSUE_NODE_ID" -F actorId="$BOT_ID"
 
           echo "Requested Copilot coding agent on the issue."
