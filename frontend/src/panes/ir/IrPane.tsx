@@ -22,6 +22,7 @@ import { fromEditableText, toEditableText } from "../../markdown/blockEdit";
 import type { Block } from "../../ipc/types";
 import { StickyHeader } from "../StickyHeader";
 import { setActiveTopBlock, useStickyEnabled } from "../../store/stickyScroll";
+import { useHoveredBlock, setHoveredBlock, clearHoveredBlock } from "../../store/hover";
 
 // ── selection state (module-level so toolbar and rows share it) ─────────────
 const [selected, setSelected] = createSignal<Set<string>>(new Set());
@@ -123,7 +124,9 @@ const IrBlockRow = (props: { block: Block; index: number }) => {
     <div
       class="ir-block"
       data-block-id={props.block.id}
-      classList={{ selected: isSelected(), "editing-point": isEditingPoint() }}
+      classList={{ selected: isSelected(), "editing-point": isEditingPoint(), "om-hover-peer": useHoveredBlock()() === props.block.id }}
+      onMouseEnter={() => setHoveredBlock(props.block.id)}
+      onMouseLeave={() => clearHoveredBlock()}
       onClick={handleRowClick}
     >
       <div class="ir-block-head">

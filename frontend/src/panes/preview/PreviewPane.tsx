@@ -51,6 +51,7 @@ import { usePagedMode, usePageConfig } from "../../store/pagination";
 import { isPageBreakBlock, pageFrameClasses } from "../../export/pagination";
 import { StickyHeader } from "../StickyHeader";
 import { setActiveTopBlock, useStickyEnabled } from "../../store/stickyScroll";
+import { useHoveredBlock, setHoveredBlock, clearHoveredBlock } from "../../store/hover";
 import "katex/dist/katex.min.css";
 
 const FONT_OPTIONS: { id: PreviewFontFamily; label: string }[] = [
@@ -422,7 +423,9 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
       <div
         class="preview-row"
         data-block-id={props.block.id}
-        classList={{ "editing-point": isEditingPoint(), ...diffClasses() }}
+        classList={{ "editing-point": isEditingPoint(), "om-hover-peer": useHoveredBlock()() === props.block.id, ...diffClasses() }}
+        onMouseEnter={() => setHoveredBlock(props.block.id)}
+        onMouseLeave={() => clearHoveredBlock()}
         onFocusIn={() => markEditingPoint()}
         onFocusOut={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -452,7 +455,9 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
       <div
         class="preview-row"
         data-block-id={props.block.id}
-        classList={{ "editing-point": isEditingPoint(), ...diffClasses() }}
+        classList={{ "editing-point": isEditingPoint(), "om-hover-peer": useHoveredBlock()() === props.block.id, ...diffClasses() }}
+        onMouseEnter={() => setHoveredBlock(props.block.id)}
+        onMouseLeave={() => clearHoveredBlock()}
         onFocusIn={() => markEditingPoint()}
         onFocusOut={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -501,7 +506,9 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
       data-block-id={props.block.id}
       data-om-anchor={anchorName() ?? undefined}
       id={anchorName() ? `ref-${anchorName()}` : undefined}
-      classList={{ "editing-point": isEditingPoint(), "om-has-comment": hasComments(), ...diffClasses() }}
+      classList={{ "editing-point": isEditingPoint(), "om-hover-peer": useHoveredBlock()() === props.block.id, "om-has-comment": hasComments(), ...diffClasses() }}
+      onMouseEnter={() => setHoveredBlock(props.block.id)}
+      onMouseLeave={() => clearHoveredBlock()}
       onFocusIn={() => markEditingPoint()}
       onFocusOut={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {

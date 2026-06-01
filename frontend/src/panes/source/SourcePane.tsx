@@ -31,6 +31,7 @@ import {
 } from "../../store/imageDrop";
 import { StickyHeader } from "../StickyHeader";
 import { setActiveTopBlock, useStickyEnabled } from "../../store/stickyScroll";
+import { useHoveredBlock, lineOfOffset } from "../../store/hover";
 
 type PaneProps = {
   layoutControls?: JSX.Element;
@@ -103,6 +104,27 @@ export const SourcePane = (props: PaneProps) => {
 
   const markerStyle = (): JSX.CSSProperties => {
     const line = markerLine();
+    if (line === null) return {};
+    const currentMetrics = metrics();
+    return {
+      height: `${currentMetrics.lineHeight}px`,
+      transform: `translateY(${
+        currentMetrics.paddingTop + line * currentMetrics.lineHeight - scrollTop()
+      }px)`,
+    };
+  };
+
+  // --- Hover marker: highlight hovered block's line -------------------------
+  const hoverMarkerLine = createMemo(() => {
+    const id = useHoveredBlock()();
+    if (id == null) return null;
+    const b = doc().blocks.find((x) => x.id === id);
+    if (!b) return null;
+    return lineOfOffset(source(), b.src_range[0]);
+  });
+
+  const hoverMarkerStyle = (): JSX.CSSProperties => {
+    const line = hoverMarkerLine();
     if (line === null) return {};
     const currentMetrics = metrics();
     return {
@@ -312,6 +334,9 @@ export const SourcePane = (props: PaneProps) => {
         <StickyHeader />
         <Show when={markerLine() !== null}>
           <div class="source-edit-marker" style={markerStyle()} aria-hidden="true" />
+        </Show>
+        <Show when={hoverMarkerLine() !== null}>
+          <div class="source-hover-marker" style={hoverMarkerStyle()} aria-hidden="true" />
         </Show>
         <textarea
           ref={ta}
