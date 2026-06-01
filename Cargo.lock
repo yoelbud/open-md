@@ -2129,7 +2129,7 @@ dependencies = [
  "serde",
  "tauri",
  "tauri-build",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2140,7 +2140,7 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "xxhash-rust",
 ]
 
