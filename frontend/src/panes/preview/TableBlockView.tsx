@@ -1,9 +1,12 @@
 import { createMemo, createSignal, Index, Show } from "solid-js";
 import type { Block, MarkdownTable, TableColumnAlignment } from "../../ipc/types";
-import { formatMarkdownTable, normalizeMarkdownTable, parseMarkdownTable } from "../../markdown/table";
+import { formatMarkdownTable, normalizeMarkdownTable, parseMarkdownTable, tableToCsv } from "../../markdown/table";
 import { withBlockTrailing } from "../../markdown/blockEdit";
 import { replaceBlockSource } from "../../store/document";
 import { useSpellcheck } from "../../store/spellcheck";
+import { copyText } from "../../store/blockActions";
+import { requestContextMenu } from "../ContextMenu";
+import type { CtxItem } from "../ContextMenu";
 import {
   addColumn as modelAddColumn,
   addRow as modelAddRow,
@@ -118,6 +121,41 @@ export const TableBlockView = (props: Props) => {
 
   const selectedAlignment = () => table().alignments[activeCell()?.col ?? 0] ?? "default";
 
+  const addColWithHeader = (index: number): MarkdownTable => {
+    const next = modelAddColumn(table(), index);
+    next.headers[index] = `Column ${index + 1}`;
+    return next;
+  };
+
+  const tableCellItems = (section: CellSection, row: number, col: number): CtxItem[] => {
+    const alignSub: CtxItem[] = ALIGNMENT_OPTIONS.map((opt) => ({
+      label: opt.label,
+      action: () => commit(modelSetAlign(table(), col, opt.id)),
+    }));
+    const sortSub: CtxItem[] = [
+      { label: "A→Z", action: () => commit(modelSortByColumn(table(), col, "asc")) },
+      { label: "Z→A", action: () => commit(modelSortByColumn(table(), col, "desc")) },
+    ];
+    return [
+      { label: "Insert row above", action: () => commit(modelAddRow(table(), section === "body" ? row : 0)) },
+      { label: "Insert row below", action: () => commit(modelAddRow(table(), section === "body" ? row + 1 : table().rows.length)) },
+      { label: "Delete row", danger: true, disabled: section !== "body", action: () => commit(modelDeleteRow(table(), row)) },
+      { label: "Insert column left", separatorBefore: true, action: () => commit(addColWithHeader(col)) },
+      { label: "Insert column right", action: () => commit(addColWithHeader(col + 1)) },
+      { label: "Delete column", danger: true, disabled: table().headers.length <= 1, action: () => commit(modelDeleteColumn(table(), col)) },
+      { label: "Align", separatorBefore: true, submenu: alignSub },
+      { label: "Sort by column", submenu: sortSub },
+      { label: "Copy as CSV", separatorBefore: true, action: () => void copyText(tableToCsv(table())) },
+      { label: "Copy as Markdown", action: () => void copyText(formatMarkdownTable(table())) },
+    ];
+  };
+
+  const handleCellContextMenu = (e: MouseEvent, section: CellSection, row: number, col: number) => {
+    e.preventDefault();
+    setActiveCell({ section, row, col });
+    requestContextMenu({ x: e.clientX, y: e.clientY, items: tableCellItems(section, row, col) });
+  };
+
   return (
     <div class="om-table-block">
       <div class="om-table-toolbar">
@@ -172,6 +210,7 @@ export const TableBlockView = (props: Props) => {
                   <th
                     classList={{ selected: isActive("header", 0, col) }}
                     style={{ "text-align": alignStyle(table().alignments[col]) }}
+                    onContextMenu={(e) => handleCellContextMenu(e, "header", 0, col)}
                   >
                     <input
                       value={cell()}
@@ -204,6 +243,7 @@ export const TableBlockView = (props: Props) => {
                         <td
                           classList={{ selected: isActive("body", rowIndex, col) }}
                           style={{ "text-align": alignStyle(table().alignments[col]) }}
+                          onContextMenu={(e) => handleCellContextMenu(e, "body", rowIndex, col)}
                         >
                           <input
                             value={cell()}

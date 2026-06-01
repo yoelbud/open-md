@@ -126,3 +126,19 @@ export const formatMarkdownTable = (table: MarkdownTable): string => {
     ...normalized.rows.map(formatRow),
   ].join("\n");
 };
+
+// ── CSV export (RFC-4180-ish) ────────────────────────────────────────────────
+
+const csvField = (value: string): string => {
+  if (value.includes(",") || value.includes('"') || value.includes("\n") || value.includes("\r")) {
+    return '"' + value.replace(/"/g, '""') + '"';
+  }
+  return value;
+};
+
+const csvRow = (cells: string[]): string => cells.map(csvField).join(",");
+
+export const tableToCsv = (table: MarkdownTable): string => {
+  const normalized = normalizeMarkdownTable(table);
+  return [csvRow(normalized.headers), ...normalized.rows.map(csvRow)].join("\n");
+};

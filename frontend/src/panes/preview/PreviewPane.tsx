@@ -12,9 +12,11 @@ import {
   moveBlocksUp,
   replaceBlockSource,
   resetPreviewTypography,
+  searchForSelection,
   setEditingPoint,
   setPreviewMode,
   setPreviewTypography,
+  toggleHighlight,
   useDocument,
   useEditingPoint,
   usePreviewMode,
@@ -70,6 +72,7 @@ import {
   copyText,
 } from "../../store/blockActions";
 import type { TurnIntoKind } from "../../store/blockActions";
+import { toggleWrap, linkifySelection } from "../../store/selectionActions";
 import "katex/dist/katex.min.css";
 
 const FONT_OPTIONS: { id: PreviewFontFamily; label: string }[] = [
@@ -286,9 +289,47 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
     ];
   };
 
+  const selectionRangeInBlock = (): { start: number; end: number; text: string } | null => {
+    if (previewMode() !== "rich" || !supportsMarks(props.block.kind) || !viewRef) return null;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!viewRef.contains(range.commonAncestorContainer)) return null;
+    const text = selection.toString();
+    if (!text.trim()) return null;
+    const idx = props.block.source.indexOf(text);
+    if (idx < 0) return null;
+    return {
+      start: charIndex(props.block.source, idx),
+      end: charIndex(props.block.source, idx + text.length),
+      text,
+    };
+  };
+
+  const selectionContextItems = (sel: { start: number; end: number; text: string }): CtxItem[] => [
+    { label: "Bold", action: () => replaceBlockSource(props.block, toggleWrap(props.block.source, sel.start, sel.end, "**")) },
+    { label: "Italic", action: () => replaceBlockSource(props.block, toggleWrap(props.block.source, sel.start, sel.end, "*")) },
+    { label: "Code", action: () => replaceBlockSource(props.block, toggleWrap(props.block.source, sel.start, sel.end, "`")) },
+    { label: "Highlight", separatorBefore: true, action: () => toggleHighlight(props.index, sel.start, sel.end) },
+    {
+      label: "Create link…",
+      action: () => {
+        const url = prompt("Enter URL:");
+        if (url) replaceBlockSource(props.block, linkifySelection(props.block.source, sel.start, sel.end, url));
+      },
+    },
+    { label: "Add comment", separatorBefore: true, action: () => handleAddComment() },
+    { label: "Search for selection", action: () => searchForSelection(sel.text) },
+  ];
+
   const handleContextMenu = (e: MouseEvent) => {
     e.preventDefault();
-    requestContextMenu({ x: e.clientX, y: e.clientY, items: blockContextItems() });
+    const sel = selectionRangeInBlock();
+    if (sel) {
+      requestContextMenu({ x: e.clientX, y: e.clientY, items: selectionContextItems(sel) });
+    } else {
+      requestContextMenu({ x: e.clientX, y: e.clientY, items: blockContextItems() });
+    }
   };
 
   const isEditingPoint = () => {

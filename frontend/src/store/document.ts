@@ -789,6 +789,11 @@ export const openFind = () => { setFindOpenRaw(true); setFindShowReplace(false);
 export const openFindReplace = () => { setFindOpenRaw(true); setFindShowReplace(true); };
 export const closeFind = () => setFindOpenRaw(false);
 
+const [findSeed, setFindSeedRaw] = createSignal("");
+export const useFindSeed = () => findSeed;
+export const setFindSeed = (s: string) => setFindSeedRaw(s);
+export const searchForSelection = (text: string) => { setFindSeed(text); openFind(); };
+
 // --- block-level edits -----------------------------------------------------
 
 // Replace one block's source slice in the document. Used by IR + Preview panes.

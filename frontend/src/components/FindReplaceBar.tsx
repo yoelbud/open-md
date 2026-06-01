@@ -1,8 +1,9 @@
-import { createSignal, createMemo, Show, onMount } from "solid-js";
+import { createSignal, createMemo, createEffect, Show, onMount } from "solid-js";
 import {
   closeFind,
   useFindOpen,
   useFindShowReplace,
+  useFindSeed,
   useSource,
   useSetSource,
 } from "../store/document";
@@ -111,6 +112,16 @@ export const FindReplaceBar = (props: FindReplaceRequest) => {
   // Focus the find input when opened
   onMount(() => {
     if (findInput) findInput.focus();
+  });
+
+  // Seed the query from useFindSeed() when the bar opens with a non-empty seed
+  createEffect(() => {
+    if (isOpen()) {
+      const seed = useFindSeed()();
+      if (seed) {
+        onQueryInput(seed);
+      }
+    }
   });
 
   return (
