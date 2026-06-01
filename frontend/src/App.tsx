@@ -14,22 +14,24 @@ import { StatusBar } from "./components/StatusBar";
 import { CommandPalette } from "./components/CommandPalette";
 import { RecoveryBanner } from "./components/RecoveryBanner";
 import { CustomCssModal } from "./components/CustomCssModal";
+import { WelcomeScreen } from "./components/WelcomeScreen";
 import { MenuBar } from "./menubar/MenuBar";
 import { buildMenus } from "./menubar/menus";
 import {
-  applyLayoutPreset,
-  LAYOUT_PRESETS,
+  initLayoutPersistence,
   movePane,
   movePaneRelative,
   PANE_IDS,
   resetPaneSizes,
   resizePanePair,
   togglePane,
-  useActiveLayout,
   useCommentsVisible,
+  useIsWelcome,
   useOutlineVisible,
   usePaneSizes,
   usePaneVisible,
+  useProjectFiles,
+  useProjectRoot,
   useProofreadVisible,
   useSource,
   useStatusBarVisible,
@@ -68,11 +70,13 @@ export const App = () => {
   const visible = usePaneVisible();
   const visiblePanes = useVisiblePanes();
   const sizes = usePaneSizes();
-  const activeLayout = useActiveLayout();
   const outlineVisible = useOutlineVisible();
   const commentsVisible = useCommentsVisible();
   const proofreadVisible = useProofreadVisible();
   const statusBarVisible = useStatusBarVisible();
+  const isWelcome = useIsWelcome();
+  const projectRoot = useProjectRoot();
+  const projectFiles = useProjectFiles();
   const menus = buildMenus({ onOpenCustomCss: () => setCustomCssOpen(true) });
 
   // Initialize comments reactive persistence
@@ -269,6 +273,9 @@ export const App = () => {
   };
 
   onMount(() => {
+    // Restore the user's last layout (if any) and persist future changes.
+    initLayoutPersistence();
+
     const cleanup = registerShortcuts();
     onCleanup(cleanup);
 
@@ -300,56 +307,45 @@ export const App = () => {
         <MenuBar menus={menus} />
         <span class="titlebar-path">{path()}</span>
         <span class="titlebar-spacer" />
-        <div class="titlebar-controls">
-          <div class="layout-presets" role="group" aria-label="Layout presets">
-            <For each={LAYOUT_PRESETS}>
-              {(preset) => (
-                <button
-                  type="button"
-                  classList={{ active: activeLayout() === preset.id }}
-                  onClick={() => applyLayoutPreset(preset.id)}
-                  title={preset.description}
-                >
-                  {preset.label}
-                </button>
-              )}
-            </For>
-            <Show when={activeLayout() === "custom"}>
-              <span class="layout-custom" title="Current pane order or sizing differs from a preset">
-                Custom
-              </span>
-            </Show>
+        <Show when={!isWelcome()}>
+          <div class="titlebar-controls">
+            <div class="pane-toggles" role="group" aria-label="Pane visibility">
+              <button
+                type="button"
+                classList={{ active: visible().source }}
+                onClick={() => togglePane("source")}
+                title="Toggle Source pane (Ctrl+1)"
+              >
+                Source
+              </button>
+              <button
+                type="button"
+                classList={{ active: visible().ir }}
+                onClick={() => togglePane("ir")}
+                title="Toggle IR pane (Ctrl+2)"
+              >
+                IR
+              </button>
+              <button
+                type="button"
+                classList={{ active: visible().preview }}
+                onClick={() => togglePane("preview")}
+                title="Toggle Preview pane (Ctrl+3)"
+              >
+                Preview
+              </button>
+            </div>
           </div>
-          <div class="pane-toggles" role="group" aria-label="Pane visibility">
-            <button
-              type="button"
-              classList={{ active: visible().source }}
-              onClick={() => togglePane("source")}
-              title="Toggle Source pane (Ctrl+1)"
-            >
-              Source
-            </button>
-            <button
-              type="button"
-              classList={{ active: visible().ir }}
-              onClick={() => togglePane("ir")}
-              title="Toggle IR pane (Ctrl+2)"
-            >
-              IR
-            </button>
-            <button
-              type="button"
-              classList={{ active: visible().preview }}
-              onClick={() => togglePane("preview")}
-              title="Toggle Preview pane (Ctrl+3)"
-            >
-              Preview
-            </button>
-          </div>
-        </div>
+        </Show>
       </div>
       <div class="workspace">
-        <ProjectSidebar />
+        <Show when={isWelcome()}>
+          <WelcomeScreen />
+        </Show>
+        <Show when={!isWelcome()}>
+        <Show when={projectRoot() !== null || projectFiles().length > 0}>
+          <ProjectSidebar />
+        </Show>
         <Show when={outlineVisible()}>
           <OutlinePanel />
         </Show>
@@ -405,6 +401,7 @@ export const App = () => {
         </Show>
         <Show when={proofreadVisible()}>
           <ProofreadPanel />
+        </Show>
         </Show>
       </div>
       <Show when={statusBarVisible()}>
