@@ -1,0 +1,39 @@
+version: 2
+updates:
+  # Frontend npm dependencies (Solid.js + Vite app under frontend/)
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels:
+      - "area: frontend"
+    groups:
+      # Batch dev tooling so coordinated bumps (vite/vitest/esbuild) arrive together.
+      frontend-build-tooling:
+        patterns:
+          - "vite"
+          - "vite-*"
+          - "vitest"
+          - "@vitejs/*"
+          - "esbuild"
+        update-types:
+          - minor
+          - patch
+
+  # Rust workspace dependencies (Cargo.toml at repo root)
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels:
+      - "area: rust"
+
+  # GitHub Actions used by CI / automation workflows
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - "area: ci"
