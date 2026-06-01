@@ -63,6 +63,26 @@ npm test
 npm run build
 ```
 
+## Performance
+
+A dependency-free benchmark harness measures the core pipeline (segmentation +
+per-block rendering) on synthetic large documents:
+
+```sh
+cargo run --release --example bench_pipeline
+```
+
+This prints a table of timings for documents ranging from 1 000 to 50 000
+blocks, covering:
+
+- **Segmentation throughput** — `segment()` alone
+- **Full payload render** — segment + render all blocks (rich + plain HTML)
+- **Re-segmentation** — whole-doc re-parse after a small edit
+
+Regression guards also run as part of `cargo test` (Rust) and `npm test`
+(frontend), asserting that the pipeline stays within generous wall-clock
+budgets and does not exhibit quadratic scaling.
+
 ## License
 
 Licensed under either of

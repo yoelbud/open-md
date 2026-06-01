@@ -4,13 +4,21 @@
 import {
   canRedo,
   canUndo,
+  closeFind,
   createMarkdownFile,
   newDocument,
   openFile,
+  openFind,
+  openFindReplace,
   redo,
   saveProject,
+  toggleComments,
+  toggleDistractionFree,
+  toggleFocusMode,
   togglePane,
+  toggleTypewriterMode,
   undo,
+  useFindOpen,
 } from "../store/document";
 import { exportPreviewPdf } from "./previewPdf";
 
@@ -58,8 +66,57 @@ export const registerShortcuts = () => {
         e.preventDefault();
         togglePane("preview");
         break;
+      case "f":
+        e.preventDefault();
+        openFind();
+        break;
+      case "h":
+        e.preventDefault();
+        openFindReplace();
+        break;
+      case "m":
+        if (e.shiftKey) {
+          e.preventDefault();
+          toggleComments();
+        }
+        break;
+      case "escape":
+        if (useFindOpen()()) closeFind();
+        break;
+      case "f11":
+        e.preventDefault();
+        toggleDistractionFree();
+        break;
+    }
+
+    // Alt-based shortcuts (no Ctrl required)
+    if (e.altKey && !e.ctrlKey && !e.metaKey) {
+      // handled below
     }
   };
+
+  const altHandler = (e: KeyboardEvent) => {
+    if (!e.altKey || e.ctrlKey || e.metaKey) return;
+    switch (e.key.toLowerCase()) {
+      case "t":
+        e.preventDefault();
+        toggleTypewriterMode();
+        break;
+      case "f":
+        e.preventDefault();
+        toggleFocusMode();
+        break;
+      case "d":
+        e.preventDefault();
+        toggleDistractionFree();
+        break;
+    }
+  };
+
   window.addEventListener("keydown", handler);
-  return () => window.removeEventListener("keydown", handler);
+  window.addEventListener("keydown", altHandler);
+  return () => {
+    window.removeEventListener("keydown", handler);
+    window.removeEventListener("keydown", altHandler);
+  };
 };

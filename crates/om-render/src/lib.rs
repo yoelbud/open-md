@@ -18,10 +18,13 @@
 #![deny(missing_docs)]
 
 use std::borrow::Cow;
+use std::fmt::Write;
 
 use om_core::{
     callout::{parse_callout, Callout},
+    frontmatter::parse_front_matter,
     image::{parse_image_at, parse_image_block, ParsedImage},
+    math::parse_display_math,
     Block, BlockKind, Document, MarkRange,
 };
 use pulldown_cmark::{html, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
@@ -78,7 +81,13 @@ fn render_block_rich(block: &Block, ranges: &[MarkRange]) -> String {
     if let Some(diagram) = mermaid_diagram_source(&block.source) {
         return render_mermaid_diagram(&diagram);
     }
+    if let Some(tex) = parse_display_math(&block.source) {
+        return render_display_math(tex);
+    }
     match block.kind {
+        BlockKind::FrontMatter => {
+            return render_front_matter_rich(&block.source);
+        }
         BlockKind::Image => {
             if let Some(image) = parse_image_block(&block.source) {
                 return render_image_block(&image);
@@ -110,6 +119,15 @@ fn render_block_rich(block: &Block, ranges: &[MarkRange]) -> String {
 /// annotation overlay. This is the "regular Markdown preview" and the source
 /// for raw PDF export.
 fn render_block_plain(block: &Block) -> String {
+    if block.kind == BlockKind::FrontMatter {
+        return render_front_matter_plain(&block.source);
+    }
+    if block.kind == BlockKind::Math {
+        return format!(
+            "<pre class=\"om-math-raw\"><code>{}</code></pre>\n",
+            escape_html(block.source.trim())
+        );
+    }
     if block.kind == BlockKind::Image {
         if let Some(image) = parse_image_block(&block.source) {
             return format!(
@@ -158,7 +176,238 @@ fn render_markdown_fragment(source: &str, skip_inline: bool) -> String {
     let parser = Parser::new_ext(&transformed, opts());
     let mut out = String::with_capacity(source.len() + 32);
     html::push_html(&mut out, parser);
+    if !skip_inline {
+        out = apply_inline_marks(&out);
+    }
+    out = rewrite_footnote_html(&out);
     out
+}
+
+/// Rewrite `pulldown_cmark`'s default footnote HTML classes to open-md's
+/// `om-fnref` / `om-fndef` classes with `data-om-fnref` / `data-om-fndef`
+/// attributes for hover-preview lookups.
+fn rewrite_footnote_html(html: &str) -> String {
+    const REF_MARKER: &str = "<sup class=\"footnote-reference\"><a href=\"#";
+    const DEF_MARKER: &str = "<div class=\"footnote-definition\" id=\"";
+
+    if !html.contains("footnote-") {
+        return html.to_string();
+    }
+
+    let mut out = String::with_capacity(html.len());
+    let mut pos = 0;
+
+    while pos < html.len() {
+        if html[pos..].starts_with(REF_MARKER) {
+            // <sup class="footnote-reference"><a href="#ID">LABEL</a></sup>
+            let after_marker = pos + REF_MARKER.len();
+            if let Some(quote_end) = html[after_marker..].find('"') {
+                let id = &html[after_marker..after_marker + quote_end];
+                // Find >LABEL</a></sup>
+                let a_start = after_marker + quote_end + 2; // skip `">`
+                if let Some(a_close) = html[a_start..].find("</a></sup>") {
+                    let label = &html[a_start..a_start + a_close];
+                    let _ = write!(
+                        out,
+                        "<sup class=\"om-fnref\" data-om-fnref=\"{id}\"><a href=\"#fn-{id}\">{label}</a></sup>"
+                    );
+                    pos = a_start + a_close + "</a></sup>".len();
+                    continue;
+                }
+            }
+        } else if html[pos..].starts_with(DEF_MARKER) {
+            // <div class="footnote-definition" id="ID"><sup class="footnote-definition-label">LABEL</sup>
+            let after_marker = pos + DEF_MARKER.len();
+            if let Some(quote_end) = html[after_marker..].find('"') {
+                let id = &html[after_marker..after_marker + quote_end];
+                let sup_marker = "<sup class=\"footnote-definition-label\">";
+                let after_id_close = after_marker + quote_end + 2; // skip `">`
+                if html[after_id_close..].starts_with(sup_marker) {
+                    let label_start = after_id_close + sup_marker.len();
+                    if let Some(sup_close) = html[label_start..].find("</sup>") {
+                        let label = &html[label_start..label_start + sup_close];
+                        let _ = write!(
+                            out,
+                            "<div class=\"om-fndef\" id=\"fn-{id}\" data-om-fndef=\"{id}\"><span class=\"om-fndef-label\">{label}.</span> "
+                        );
+                        pos = label_start + sup_close + "</sup>".len();
+                        continue;
+                    }
+                }
+            }
+        }
+
+        out.push(html.as_bytes()[pos] as char);
+        pos += 1;
+    }
+
+    out
+}
+
+/// Apply inline text marks (sub, sup, ins, mark) to already-rendered HTML,
+/// carefully skipping content inside `<code>`, `<pre>`, and HTML tag attributes.
+///
+/// Supported syntax (delimiters must hug non-space content):
+/// - `~text~`   → `<sub>text</sub>`  (single tilde, not part of `~~`)
+/// - `^text^`   → `<sup>text</sup>`
+/// - `++text++` → `<ins>text</ins>`
+/// - `==text==` → `<mark>text</mark>`
+fn apply_inline_marks(html: &str) -> String {
+    // Split the HTML into segments: protected (inside <code>, <pre>, or HTML
+    // tags) and transformable (plain text between tags).
+    let mut result = String::with_capacity(html.len());
+    let mut i = 0;
+    let bytes = html.as_bytes();
+
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
+            // Check for <code> or <pre> opening tags (case insensitive).
+            if starts_with_ci(html, i, "<code") || starts_with_ci(html, i, "<pre") {
+                let is_pre = starts_with_ci(html, i, "<pre");
+                let close_tag = if is_pre { "</pre>" } else { "</code>" };
+                // Find the matching close tag.
+                if let Some(end) = find_close_tag(html, i, close_tag) {
+                    result.push_str(&html[i..end]);
+                    i = end;
+                    continue;
+                }
+            }
+            // Any other HTML tag — copy verbatim until '>'.
+            if let Some(end) = html[i..].find('>') {
+                let tag_end = i + end + 1;
+                result.push_str(&html[i..tag_end]);
+                i = tag_end;
+            } else {
+                result.push_str(&html[i..]);
+                break;
+            }
+            continue;
+        }
+
+        // Find the next '<' or end.
+        let next_tag = html[i..].find('<').map_or(html.len(), |p| i + p);
+        let segment = &html[i..next_tag];
+        result.push_str(&transform_text_marks(segment));
+        i = next_tag;
+    }
+
+    result
+}
+
+/// Check if `html[pos..]` starts with `prefix` (ASCII case-insensitive).
+fn starts_with_ci(html: &str, pos: usize, prefix: &str) -> bool {
+    let rest = &html[pos..];
+    if rest.len() < prefix.len() {
+        return false;
+    }
+    rest[..prefix.len()].eq_ignore_ascii_case(prefix)
+}
+
+/// Find the byte offset (from start of `html`) just past the closing tag.
+fn find_close_tag(html: &str, start: usize, close_tag: &str) -> Option<usize> {
+    let haystack = &html[start..];
+    // Skip past the opening tag first.
+    let after_open = haystack.find('>')? + 1;
+    let rest = &haystack[after_open..];
+    // Case-insensitive search for close tag.
+    let lower = rest.to_ascii_lowercase();
+    let pos = lower.find(close_tag)?;
+    Some(start + after_open + pos + close_tag.len())
+}
+
+/// Apply inline mark substitutions on a text segment (no HTML tags present).
+fn transform_text_marks(text: &str) -> String {
+    // Order matters: longest delimiters first to avoid partial matches.
+    // `==text==` → <mark>, `++text++` → <ins>, then single-char `^`.
+    // Note: `~~` is already handled by pulldown_cmark as strikethrough (<del>).
+    // Note: `~` (subscript) is handled in the pre-processor (`transform_inline`)
+    // because pulldown_cmark would otherwise consume it as strikethrough.
+    let mut s = text.to_string();
+    // ==text== → <mark>text</mark>
+    s = replace_mark(&s, "==", "==", "<mark>", "</mark>");
+    // ++text++ → <ins>text</ins>
+    s = replace_mark(&s, "++", "++", "<ins>", "</ins>");
+    // ^text^ → <sup>text</sup>
+    s = replace_mark(&s, "^", "^", "<sup>", "</sup>");
+    s
+}
+
+/// Replace `open_delim...close_delim` with `html_open...html_close`,
+/// enforcing that content hugs the delimiter (no leading/trailing spaces)
+/// and does not span newlines.
+fn replace_mark(
+    input: &str,
+    open_delim: &str,
+    close_delim: &str,
+    html_open: &str,
+    html_close: &str,
+) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut pos = 0;
+
+    while pos < input.len() {
+        if let Some(start) = input[pos..].find(open_delim) {
+            let abs_start = pos + start;
+            let content_start = abs_start + open_delim.len();
+            if content_start < input.len() {
+                // Content must not start with a space.
+                let first_byte = input.as_bytes()[content_start];
+                if first_byte != b' ' && first_byte != b'\n' && first_byte != b'\r' {
+                    // Find the closing delimiter in the remaining text (no newlines).
+                    if let Some(end) = find_close_delim(&input[content_start..], close_delim) {
+                        let content = &input[content_start..content_start + end];
+                        // Content must not end with a space.
+                        if !content.ends_with(' ') && !content.is_empty() {
+                            result.push_str(&input[pos..abs_start]);
+                            result.push_str(html_open);
+                            result.push_str(content);
+                            result.push_str(html_close);
+                            pos = content_start + end + close_delim.len();
+                            continue;
+                        }
+                    }
+                }
+            }
+            // No match — advance past the delimiter to avoid infinite loop.
+            result.push_str(&input[pos..content_start]);
+            pos = content_start;
+        } else {
+            result.push_str(&input[pos..]);
+            break;
+        }
+    }
+
+    result
+}
+
+/// Find closing delimiter within text, not crossing newlines.
+fn find_close_delim(text: &str, delim: &str) -> Option<usize> {
+    let p = text.find(delim)?;
+    // Ensure no newline in between.
+    if text[..p].contains('\n') {
+        return None;
+    }
+    Some(p)
+}
+
+/// Find closing single tilde that is not part of `~~`, not across newlines.
+fn find_single_tilde_close(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\n' {
+            return None;
+        }
+        if bytes[i] == b'~' {
+            // Must be a single tilde (not followed by another ~).
+            if i + 1 < bytes.len() && bytes[i + 1] == b'~' {
+                return None; // hit a ~~, abort
+            }
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Apply open-md's inline image extension to a block source.
@@ -197,6 +446,49 @@ fn transform_inline(source: &str) -> Cow<'_, str> {
             }
         }
 
+        // Footnote reference: [^id] → <sup class="om-fnref" ...>
+        // Must be handled before pulldown_cmark because per-block rendering
+        // lacks the definition context needed for pulldown_cmark to recognise it.
+        if rest.starts_with("[^") {
+            if let Some(end) = parse_footnote_ref(rest) {
+                let id = &rest[2..end - 1]; // between [^ and ]
+                let _ = write!(
+                    out,
+                    "<sup class=\"om-fnref\" data-om-fnref=\"{id}\"><a href=\"#fn-{id}\">{id}</a></sup>",
+                    id = escape_html(id),
+                );
+                i += end;
+                changed = true;
+                continue;
+            }
+        }
+
+        // Single-tilde subscript: ~text~ → <sub>text</sub>
+        // Must handle BEFORE pulldown_cmark which would treat it as strikethrough.
+        // Only match single ~ not preceded/followed by another ~.
+        if rest.starts_with('~')
+            && !rest.starts_with("~~")
+            && (i == 0 || source.as_bytes()[i - 1] != b'~')
+        {
+            let content_start = i + 1;
+            if content_start < source.len() {
+                let first = source.as_bytes()[content_start];
+                if first != b' ' && first != b'\n' && first != b'~' {
+                    if let Some(end) = find_single_tilde_close(&source[content_start..]) {
+                        let content = &source[content_start..content_start + end];
+                        if !content.ends_with(' ') && !content.is_empty() {
+                            out.push_str("<sub>");
+                            out.push_str(content);
+                            out.push_str("</sub>");
+                            i = content_start + end + 1;
+                            changed = true;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
         let ch = rest.chars().next().unwrap_or('\u{fffd}');
         out.push(ch);
         i += ch.len_utf8();
@@ -226,6 +518,31 @@ fn find_backtick_close(rest: &str, len: usize) -> Option<usize> {
         }
     }
     None
+}
+
+/// Parse a footnote reference `[^id]`, returning the byte length consumed
+/// (including the closing `]`). Returns `None` when `rest` doesn't start with
+/// a valid footnote reference. The id must be non-empty and contain no `]`.
+/// Does NOT match footnote definitions (`[^id]:` at line start).
+fn parse_footnote_ref(rest: &str) -> Option<usize> {
+    if !rest.starts_with("[^") {
+        return None;
+    }
+    let close = rest[2..].find(']')?;
+    if close == 0 {
+        return None; // empty id
+    }
+    // id must not contain spaces or newlines (conservative)
+    let id = &rest[2..2 + close];
+    if id.contains(' ') || id.contains('\n') {
+        return None;
+    }
+    let consumed = 2 + close + 1; // [^ + id + ]
+                                  // If followed by `:` this is a definition, not a reference.
+    if rest[consumed..].starts_with(':') {
+        return None;
+    }
+    Some(consumed)
 }
 
 /// Splice annotation open/close markers into `source` at the character offsets
@@ -337,19 +654,57 @@ fn render_callout(callout: &Callout) -> String {
     )
 }
 
-/// Render a fenced code block with a language label, or `None` when the block
-/// is not a fenced block carrying a (non-mermaid) language token.
+/// Render a fenced code block with a language label, copy button, and line
+/// numbers, or `None` when the block is not a fenced block carrying a
+/// (non-mermaid) language token.
 fn render_fenced_code(source: &str) -> Option<String> {
     let lang = fenced_language(source)?;
     if lang.eq_ignore_ascii_case("mermaid") {
         return None;
     }
-    let inner = render_markdown_fragment(source, true);
+    // Extract the raw code text (without fences) for the copy button data attr
+    // and line-number rendering.
+    let code_text = extract_code_text(source);
+    let escaped_code = escape_html(&code_text);
+    let line_count = code_text.lines().count().max(1);
+    let line_numbers = (1..=line_count).fold(String::new(), |mut acc, n| {
+        use std::fmt::Write;
+        let _ = write!(acc, "<span>{n}</span>");
+        acc
+    });
+
     Some(format!(
-        "<figure class=\"om-code\" data-lang=\"{attr}\"><figcaption>{label}</figcaption>{inner}</figure>\n",
+        "<figure class=\"om-code\" data-lang=\"{attr}\">\
+<figcaption>\
+<span class=\"om-code-lang\">{label}</span>\
+<button type=\"button\" class=\"om-code-copy\" data-om-copy aria-label=\"Copy code\">Copy</button>\
+</figcaption>\
+<div class=\"om-code-body\">\
+<div class=\"om-code-lines\" aria-hidden=\"true\">{line_numbers}</div>\
+<pre><code class=\"language-{attr}\">{escaped_code}</code></pre>\
+</div>\
+</figure>\n",
         attr = escape_attr(&lang),
         label = escape_html(&lang),
     ))
+}
+
+/// Extract the text content from a fenced code block (strip fences + info string).
+fn extract_code_text(source: &str) -> String {
+    let mut parser = Parser::new_ext(source, opts());
+    let mut text = String::new();
+    let mut in_code = false;
+    for event in &mut parser {
+        match event {
+            Event::Start(Tag::CodeBlock(_)) => {
+                in_code = true;
+            }
+            Event::Text(t) if in_code => text.push_str(&t),
+            Event::End(TagEnd::CodeBlock) => break,
+            _ => {}
+        }
+    }
+    text
 }
 
 /// Extract the language token from a fenced code block's info string.
@@ -432,6 +787,45 @@ fn render_mermaid_diagram(source: &str) -> String {
     format!(
         "<pre class=\"mermaid\" data-om-mermaid>{}</pre>\n",
         escape_html(source)
+    )
+}
+
+/// Render a display-math block as a KaTeX-ready placeholder.
+fn render_display_math(tex: &str) -> String {
+    format!(
+        "<div class=\"om-math-display\" data-om-math=\"display\">{}</div>\n",
+        escape_html(tex)
+    )
+}
+
+/// Rich rendering of front matter: a styled metadata panel with key/value rows.
+fn render_front_matter_rich(source: &str) -> String {
+    if let Some(fm) = parse_front_matter(source) {
+        if fm.fields.is_empty() {
+            return "<div class=\"om-frontmatter\"><em>(empty metadata)</em></div>\n".to_string();
+        }
+        let mut html = String::from("<div class=\"om-frontmatter\"><table>\n");
+        for (key, value) in &fm.fields {
+            let _ = writeln!(
+                html,
+                "<tr><th>{}</th><td>{}</td></tr>",
+                escape_html(key),
+                escape_html(value),
+            );
+        }
+        html.push_str("</table></div>\n");
+        html
+    } else {
+        // Fallback: render raw source as preformatted.
+        render_front_matter_plain(source)
+    }
+}
+
+/// Plain rendering of front matter: a preformatted code block.
+fn render_front_matter_plain(source: &str) -> String {
+    format!(
+        "<pre class=\"om-frontmatter-raw\"><code>{}</code></pre>\n",
+        escape_html(source.trim())
     )
 }
 
@@ -663,7 +1057,9 @@ mod tests {
 
         assert!(html.contains("class=\"om-code\""));
         assert!(html.contains("data-lang=\"rust\""));
-        assert!(html.contains("<figcaption>rust</figcaption>"));
+        assert!(html.contains("om-code-lang\">rust</span>"));
+        assert!(html.contains("data-om-copy"));
+        assert!(html.contains("om-code-lines"));
         assert!(html.contains("<pre>"));
     }
 
@@ -674,5 +1070,136 @@ mod tests {
 
         assert!(!html.contains("om-code"));
         assert!(html.contains("<pre><code>"));
+    }
+
+    #[test]
+    fn renders_display_math_as_placeholder() {
+        let doc = segment("$$\n\\int_0^1 x^2 dx\n$$\n");
+        let html = render_block(&doc.blocks[0]);
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::Math);
+        assert!(html.contains("om-math-display"));
+        assert!(html.contains("data-om-math=\"display\""));
+        assert!(html.contains("\\int_0^1 x^2 dx"));
+        assert!(!html.contains("$$"));
+    }
+
+    #[test]
+    fn escapes_display_math_html() {
+        let doc = segment("$$\na < b > c\n$$\n");
+        let html = render_block(&doc.blocks[0]);
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::Math);
+        assert!(html.contains("a &lt; b &gt; c"));
+        assert!(!html.contains("a < b > c"));
+    }
+
+    #[test]
+    fn plain_mode_renders_math_as_preformatted() {
+        let doc = segment("$$\nx^2\n$$\n");
+        let html = render_block_mode(&doc.blocks[0], RenderMode::Plain, &[]);
+
+        assert!(html.contains("<pre"));
+        assert!(html.contains("om-math-raw"));
+        assert!(!html.contains("data-om-math"));
+    }
+
+    // ─── Inline text marks ──────────────────────────────────────────────
+
+    #[test]
+    fn renders_subscript() {
+        let doc = segment("H~2~O\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("H<sub>2</sub>O"));
+    }
+
+    #[test]
+    fn renders_superscript() {
+        let doc = segment("x^2^ end\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("x<sup>2</sup> end"));
+    }
+
+    #[test]
+    fn renders_inserted_text() {
+        let doc = segment("some ++added++ text\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("some <ins>added</ins> text"));
+    }
+
+    #[test]
+    fn renders_highlight_mark() {
+        let doc = segment("this is ==important== info\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("this is <mark>important</mark> info"));
+    }
+
+    #[test]
+    fn renders_strikethrough_via_gfm() {
+        let doc = segment("~~deleted~~\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("<del>deleted</del>"));
+    }
+
+    #[test]
+    fn inline_marks_skip_code_spans() {
+        let doc = segment("a `~not sub~` b\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("<code>~not sub~</code>"));
+        assert!(!html.contains("<sub>"));
+    }
+
+    #[test]
+    fn inline_marks_no_space_guard() {
+        let html = apply_inline_marks("~ nope ~");
+        assert!(!html.contains("<sub>"));
+        assert_eq!(html, "~ nope ~");
+    }
+
+    #[test]
+    fn single_tilde_does_not_collide_with_double() {
+        let doc = segment("~~strike~~ and ~sub~\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("<del>strike</del>"));
+        assert!(html.contains("<sub>sub</sub>"));
+    }
+
+    #[test]
+    fn inline_marks_skip_pre_blocks() {
+        let html = apply_inline_marks("<pre><code>~x~ ^y^</code></pre>");
+        assert!(!html.contains("<sub>"));
+        assert!(!html.contains("<sup>"));
+    }
+
+    // ─── Footnotes ──────────────────────────────────────────────────────
+
+    #[test]
+    fn renders_footnote_reference_with_om_classes() {
+        let doc = segment("Hello[^1] world.\n");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("class=\"om-fnref\""));
+        assert!(html.contains("data-om-fnref=\"1\""));
+        assert!(html.contains("href=\"#fn-1\""));
+        assert!(html.contains(">1</a>"));
+    }
+
+    #[test]
+    fn renders_footnote_definition_with_om_classes() {
+        let doc = segment("[^1]: This is a footnote.\n");
+        assert!(!doc.blocks.is_empty(), "definition must be segmented");
+        let html = render_block(&doc.blocks[0]);
+        assert!(html.contains("class=\"om-fndef\""));
+        assert!(html.contains("id=\"fn-1\""));
+        assert!(html.contains("data-om-fndef=\"1\""));
+        assert!(html.contains("om-fndef-label"));
+        assert!(html.contains("This is a footnote."));
+    }
+
+    #[test]
+    fn footnote_definition_segmented_as_paragraph() {
+        let doc = segment("Hello[^note] world.\n\n[^note]: Detailed note.\n");
+        assert_eq!(doc.blocks.len(), 2);
+        assert_eq!(doc.blocks[0].kind, BlockKind::Paragraph);
+        assert_eq!(doc.blocks[1].kind, BlockKind::Paragraph);
     }
 }

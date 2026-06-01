@@ -1,17 +1,22 @@
-import { createEffect, createSignal, Index, Show } from "solid-js";
+import { createEffect, createSignal, Index, onCleanup, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import {
   appendImageBlock,
   clearEditingPoint,
+  deleteBlocks,
   ingestImageFile,
   insertBlockAfter,
   insertBlockAtStart,
   isEditingPointInBlock,
+  moveBlocksDown,
+  moveBlocksUp,
   replaceBlockSource,
   resetPreviewTypography,
+  searchForSelection,
   setEditingPoint,
   setPreviewMode,
   setPreviewTypography,
+  toggleHighlight,
   useDocument,
   useEditingPoint,
   usePreviewMode,
@@ -25,6 +30,50 @@ import { parseMarkdownTable } from "../../markdown/table";
 import { fromEditableText, toEditableText } from "../../markdown/blockEdit";
 import { ImageBlockView } from "./ImageBlockView";
 import { TableBlockView } from "./TableBlockView";
+import { extractHeadings, isTocToken, renderTocHtml } from "../../store/outline";
+import {
+  extractBibliography,
+  isBibliographyToken,
+  replaceCitationTokens,
+  renderReferencesHtml,
+} from "../../store/citations";
+import { splitInlineMath } from "../../store/mathInline";
+import { setupFootnoteTooltip } from "./footnotes";
+import { setupHoverPreviews } from "./hoverPreview";
+import { setupHeadingAnchors } from "./headingAnchor";
+import {
+  buildAnchorMap,
+  parseAnchor,
+  replaceRefTokens,
+  stripAnchorFromHtml,
+} from "./blockRefs";
+import {
+  useDiffMode,
+  useDiffEntries,
+  useDiffSummary,
+  diffStatusForBlock,
+} from "../../store/diff";
+import { addComment, useCommentsForBlock } from "../../store/comments";
+import { usePagedMode, usePageConfig } from "../../store/pagination";
+import { isPageBreakBlock, pageFrameClasses } from "../../export/pagination";
+import { StickyHeader } from "../StickyHeader";
+import { setActiveTopBlock, useStickyEnabled } from "../../store/stickyScroll";
+import { useHoveredBlock, setHoveredBlock, clearHoveredBlock } from "../../store/hover";
+import { requestContextMenu } from "../ContextMenu";
+import type { CtxItem } from "../ContextMenu";
+import {
+  turnBlockInto,
+  duplicateBlock,
+  copyBlockReference,
+  addCommentToBlock,
+  blockAsMarkdown,
+  blockAsHtml,
+  blockAsPlainText,
+  copyText,
+} from "../../store/blockActions";
+import type { TurnIntoKind } from "../../store/blockActions";
+import { toggleWrap, linkifySelection } from "../../store/selectionActions";
+import "katex/dist/katex.min.css";
 
 const FONT_OPTIONS: { id: PreviewFontFamily; label: string }[] = [
   { id: "sans", label: "Sans" },
@@ -63,6 +112,16 @@ const loadMermaid = async (): Promise<MermaidApi> => {
     return module.default;
   });
   return mermaidPromise;
+};
+
+// ── KaTeX lazy loader ────────────────────────────────────────────────────────
+type KatexApi = typeof import("katex");
+
+let katexPromise: Promise<KatexApi> | undefined;
+
+const loadKatex = async (): Promise<KatexApi> => {
+  katexPromise ??= import("katex");
+  return katexPromise;
 };
 
 const renderMermaidBlocks = async (root: HTMLElement, blockId: string, version: number) => {
@@ -104,6 +163,91 @@ const renderMermaidBlocks = async (root: HTMLElement, blockId: string, version: 
   }
 };
 
+// ── KaTeX display-math rendering ────────────────────────────────────────────
+const renderMathBlocks = async (root: HTMLElement, version: number) => {
+  const nodes = Array.from(root.querySelectorAll<HTMLElement>("[data-om-math=\"display\"]"));
+  if (!nodes.length) return;
+
+  try {
+    const katex = await loadKatex();
+    for (const node of nodes) {
+      if (!root.isConnected || root.dataset.mermaidVersion !== String(version)) return;
+      const tex = node.textContent ?? "";
+      node.setAttribute("data-om-tex", tex);
+      try {
+        node.innerHTML = katex.renderToString(tex, { displayMode: true, throwOnError: false });
+      } catch {
+        node.innerHTML = `<div class="om-math-error" role="alert">Math render error</div><pre class="om-math-source">${tex}</pre>`;
+      }
+      node.removeAttribute("data-om-math");
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    for (const node of nodes) {
+      const tex = node.textContent ?? "";
+      node.innerHTML = `<div class="om-math-error" role="alert">KaTeX load failed: ${message}</div><pre class="om-math-source">${tex}</pre>`;
+      node.removeAttribute("data-om-math");
+    }
+  }
+};
+
+// ── KaTeX inline-math rendering ─────────────────────────────────────────────
+const renderInlineMath = async (root: HTMLElement, version: number) => {
+  // Walk text nodes, skip <code>, <pre>, and already-rendered math
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (parent.closest("code, pre, [data-om-math], .katex")) return NodeFilter.FILTER_REJECT;
+      if (!node.textContent || !node.textContent.includes("$")) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const textNodes: Text[] = [];
+  let current = walker.nextNode();
+  while (current) {
+    textNodes.push(current as Text);
+    current = walker.nextNode();
+  }
+
+  if (!textNodes.length) return;
+
+  let katex: KatexApi | undefined;
+  try {
+    katex = await loadKatex();
+  } catch {
+    return;
+  }
+
+  for (const textNode of textNodes) {
+    if (!root.isConnected || root.dataset.mermaidVersion !== String(version)) return;
+    const text = textNode.textContent ?? "";
+    const segments = splitInlineMath(text);
+    if (segments.length <= 1 && segments[0]?.type === "text") continue;
+    if (!segments.some((s) => s.type === "math")) continue;
+
+    const frag = document.createDocumentFragment();
+    for (const seg of segments) {
+      if (seg.type === "text") {
+        frag.appendChild(document.createTextNode(seg.value));
+      } else {
+        const span = document.createElement("span");
+        span.setAttribute("data-om-math", "inline");
+        span.setAttribute("data-om-tex", seg.value);
+        try {
+          span.innerHTML = katex.renderToString(seg.value, { displayMode: false, throwOnError: false });
+        } catch {
+          span.textContent = `$${seg.value}$`;
+          span.className = "om-math-error-inline";
+        }
+        frag.appendChild(span);
+      }
+    }
+    textNode.parentNode?.replaceChild(frag, textNode);
+  }
+};
+
 // ── single block row ────────────────────────────────────────────────────────
 const PreviewBlockRow = (props: { block: Block; index: number }) => {
   const [editing, setEditing] = createSignal(false);
@@ -113,9 +257,94 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
   let taRef: HTMLTextAreaElement | undefined;
   let renderVersion = 0;
 
+  const blockContextItems = (): CtxItem[] => {
+    const b = props.block;
+    const mode = previewMode();
+    const turnIntoSub: CtxItem[] = (
+      ["paragraph", "h1", "h2", "h3", "quote", "code", "ul", "ol"] as TurnIntoKind[]
+    ).map((kind) => ({
+      label: kind === "paragraph" ? "Paragraph" :
+             kind === "h1" ? "Heading 1" :
+             kind === "h2" ? "Heading 2" :
+             kind === "h3" ? "Heading 3" :
+             kind === "quote" ? "Quote" :
+             kind === "code" ? "Code" :
+             kind === "ul" ? "Bullet list" : "Numbered list",
+      action: () => turnBlockInto(b, kind),
+    }));
+    const copyAsSub: CtxItem[] = [
+      { label: "Markdown", action: () => void copyText(blockAsMarkdown(b)) },
+      { label: "HTML", action: () => void copyText(blockAsHtml(b, mode === "rich")) },
+      { label: "Plain text", action: () => void copyText(blockAsPlainText(blockAsHtml(b, mode === "rich"))) },
+    ];
+    return [
+      { label: "Turn into…", submenu: turnIntoSub },
+      { label: "Copy as…", submenu: copyAsSub },
+      { label: "Copy block reference", separatorBefore: true, action: () => void copyBlockReference(b) },
+      { label: "Add comment", action: () => addCommentToBlock(b) },
+      { label: "Duplicate", separatorBefore: true, action: () => duplicateBlock(b) },
+      { label: "Move up", action: () => moveBlocksUp(new Set([b.id])) },
+      { label: "Move down", action: () => moveBlocksDown(new Set([b.id])) },
+      { label: "Delete", danger: true, separatorBefore: true, action: () => deleteBlocks(new Set([b.id])) },
+    ];
+  };
+
+  const selectionRangeInBlock = (): { start: number; end: number; text: string } | null => {
+    if (previewMode() !== "rich" || !supportsMarks(props.block.kind) || !viewRef) return null;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!viewRef.contains(range.commonAncestorContainer)) return null;
+    const text = selection.toString();
+    if (!text.trim()) return null;
+    const idx = props.block.source.indexOf(text);
+    if (idx < 0) return null;
+    return {
+      start: charIndex(props.block.source, idx),
+      end: charIndex(props.block.source, idx + text.length),
+      text,
+    };
+  };
+
+  const selectionContextItems = (sel: { start: number; end: number; text: string }): CtxItem[] => [
+    { label: "Bold", action: () => replaceBlockSource(props.block, toggleWrap(props.block.source, sel.start, sel.end, "**")) },
+    { label: "Italic", action: () => replaceBlockSource(props.block, toggleWrap(props.block.source, sel.start, sel.end, "*")) },
+    { label: "Code", action: () => replaceBlockSource(props.block, toggleWrap(props.block.source, sel.start, sel.end, "`")) },
+    { label: "Highlight", separatorBefore: true, action: () => toggleHighlight(props.index, sel.start, sel.end) },
+    {
+      label: "Create link…",
+      action: () => {
+        const url = prompt("Enter URL:");
+        if (url) replaceBlockSource(props.block, linkifySelection(props.block.source, sel.start, sel.end, url));
+      },
+    },
+    { label: "Add comment", separatorBefore: true, action: () => handleAddComment() },
+    { label: "Search for selection", action: () => searchForSelection(sel.text) },
+  ];
+
+  const handleContextMenu = (e: MouseEvent) => {
+    e.preventDefault();
+    const sel = selectionRangeInBlock();
+    if (sel) {
+      requestContextMenu({ x: e.clientX, y: e.clientY, items: selectionContextItems(sel) });
+    } else {
+      requestContextMenu({ x: e.clientX, y: e.clientY, items: blockContextItems() });
+    }
+  };
+
   const isEditingPoint = () => {
     const point = editingPoint();
     return !!point && point.pane !== "preview" && isEditingPointInBlock(point, props.block);
+  };
+
+  // Diff-mode status classes (added / modified / moved) for this block.
+  const diffClasses = (): Record<string, boolean> => {
+    const entry = diffStatusForBlock(props.block.id);
+    return {
+      "om-diff-added": entry?.status === "added",
+      "om-diff-modified": entry?.status === "modified",
+      "om-diff-moved": entry?.status === "moved",
+    };
   };
 
   const markEditingPoint = (offset = 0) => {
@@ -138,13 +367,61 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
   // Keep view HTML in sync when source changes externally (not while editing).
   // Markdown mode renders the plain, standard-Markdown HTML; rich mode renders
   // the IR-enriched HTML with the annotation overlay.
+  // Special case: [TOC] paragraph blocks render an auto table-of-contents.
+  const doc = useDocument;
   createEffect(() => {
-    const html = previewMode() === "markdown" ? props.block.plain_html : props.block.html;
+    let html = previewMode() === "markdown" ? props.block.plain_html : props.block.html;
+    if (isTocToken(props.block)) {
+      const headings = extractHeadings(doc().blocks);
+      html = renderTocHtml(headings);
+    }
+    // ── Citations: bibliography token renders the references list ──
+    const blocks = doc().blocks;
+    if (isBibliographyToken(props.block)) {
+      const registry = extractBibliography(blocks);
+      // Collect all cited keys by scanning all non-bib block HTML
+      const citedKeys = new Set<string>();
+      for (const b of blocks) {
+        if (b.id === props.block.id) continue;
+        const bHtml = previewMode() === "markdown" ? b.plain_html : b.html;
+        replaceCitationTokens(bHtml, registry, (k) => citedKeys.add(k));
+      }
+      html = renderReferencesHtml(registry, citedKeys);
+    }
     if (!viewRef || editing()) return;
+
+    // ── Block references: strip anchor markers & resolve transclusions ──
+    const anchor = parseAnchor(props.block.source);
+    if (anchor) {
+      html = stripAnchorFromHtml(html);
+    }
+
+    // Resolve embed/link tokens using the document-wide anchor map.
+    const anchorMap = buildAnchorMap(blocks);
+    const resolver = (blockId: string): string | null => {
+      const target = blocks.find((b) => b.id === blockId);
+      if (!target) return null;
+      const targetHtml = previewMode() === "markdown" ? target.plain_html : target.html;
+      return stripAnchorFromHtml(targetHtml);
+    };
+    html = replaceRefTokens(html, anchorMap, resolver);
+
+    // ── Inline citations: resolve [@key] tokens ──
+    if (!isBibliographyToken(props.block)) {
+      const bibRegistry = extractBibliography(blocks);
+      if (bibRegistry.size > 0) {
+        html = replaceCitationTokens(html, bibRegistry, () => {});
+      }
+    }
+
     renderVersion += 1;
     viewRef.dataset.mermaidVersion = String(renderVersion);
     viewRef.innerHTML = html;
     void renderMermaidBlocks(viewRef, props.block.id, renderVersion);
+    if (previewMode() === "rich") {
+      void renderMathBlocks(viewRef, renderVersion);
+      void renderInlineMath(viewRef, renderVersion);
+    }
   });
 
   // Auto-focus + select textarea when entering edit mode.
@@ -243,7 +520,11 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
     return (
       <div
         class="preview-row"
-        classList={{ "editing-point": isEditingPoint() }}
+        data-block-id={props.block.id}
+        classList={{ "editing-point": isEditingPoint(), "om-hover-peer": useHoveredBlock()() === props.block.id, ...diffClasses() }}
+        onMouseEnter={() => setHoveredBlock(props.block.id)}
+        onMouseLeave={() => clearHoveredBlock()}
+        onContextMenu={handleContextMenu}
         onFocusIn={() => markEditingPoint()}
         onFocusOut={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -272,7 +553,11 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
     return (
       <div
         class="preview-row"
-        classList={{ "editing-point": isEditingPoint() }}
+        data-block-id={props.block.id}
+        classList={{ "editing-point": isEditingPoint(), "om-hover-peer": useHoveredBlock()() === props.block.id, ...diffClasses() }}
+        onMouseEnter={() => setHoveredBlock(props.block.id)}
+        onMouseLeave={() => clearHoveredBlock()}
+        onContextMenu={handleContextMenu}
         onFocusIn={() => markEditingPoint()}
         onFocusOut={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -292,10 +577,39 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
     );
   }
 
+  // Derive anchor name for this block (used for container attributes).
+  const anchorName = () => parseAnchor(props.block.source);
+
+  // ── comment indicator ──
+  const blockComments = useCommentsForBlock(() => props.block.id);
+  const hasComments = () => blockComments().length > 0;
+
+  const handleAddComment = () => {
+    // Capture any text selection as the quote
+    let quote: string | undefined;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && viewRef?.contains(selection.anchorNode)) {
+      const text = selection.toString().trim();
+      if (text) quote = text;
+    }
+    const body = prompt("Add a comment:");
+    if (body?.trim()) {
+      const payload: Parameters<typeof addComment>[0] = { blockId: props.block.id, body: body.trim() };
+      if (quote) payload.quote = quote;
+      addComment(payload);
+    }
+  };
+
   return (
     <div
       class="preview-row"
-      classList={{ "editing-point": isEditingPoint() }}
+      data-block-id={props.block.id}
+      data-om-anchor={anchorName() ?? undefined}
+      id={anchorName() ? `ref-${anchorName()}` : undefined}
+      classList={{ "editing-point": isEditingPoint(), "om-hover-peer": useHoveredBlock()() === props.block.id, "om-has-comment": hasComments(), ...diffClasses() }}
+      onMouseEnter={() => setHoveredBlock(props.block.id)}
+      onMouseLeave={() => clearHoveredBlock()}
+      onContextMenu={handleContextMenu}
       onFocusIn={() => markEditingPoint()}
       onFocusOut={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
@@ -303,6 +617,11 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
         }
       }}
     >
+      <Show when={hasComments()}>
+        <span class="om-comment-badge" title={`${blockComments().length} comment(s)`}>
+          {blockComments().length}
+        </span>
+      </Show>
       <div
         ref={viewRef}
         class="preview-block"
@@ -340,12 +659,84 @@ const PreviewBlockRow = (props: { block: Block; index: number }) => {
         <Show when={editing()}>
           <span class="preview-edit-hint">Esc / Ctrl+Enter</span>
         </Show>
+        <button
+          type="button"
+          class="preview-row-comment-btn"
+          title="Add comment"
+          onClick={(e) => { e.stopPropagation(); handleAddComment(); }}
+        >
+          💬
+        </button>
         <InsertMenu
           block={props.block}
           label=""
           onPick={(snip) => insertBlockAfter(props.block, snip)}
         />
       </div>
+    </div>
+  );
+};
+
+// ── diff ghost row (a block that was removed since the baseline) ──────────────
+const PreviewGhostRow = (props: { block: Block }) => {
+  let ref: HTMLDivElement | undefined;
+  createEffect(() => {
+    if (ref) ref.innerHTML = props.block.html;
+  });
+  return (
+    <div class="preview-row om-diff-removed" aria-label="Removed block">
+      <div ref={ref} class="preview-block om-diff-ghost" />
+    </div>
+  );
+};
+
+// ── diff summary banner ──────────────────────────────────────────────────────
+const DiffSummaryBanner = () => {
+  const summary = useDiffSummary;
+  return (
+    <div class="om-diff-summary" role="status">
+      <span class="om-diff-summary-title">Changes vs. last saved</span>
+      <span class="om-diff-summary-added">+{summary().added}</span>
+      <span class="om-diff-summary-removed">−{summary().removed}</span>
+      <span class="om-diff-summary-modified">~{summary().modified}</span>
+      <Show when={summary().moved > 0}>
+        <span class="om-diff-summary-moved">⇄{summary().moved}</span>
+      </Show>
+    </div>
+  );
+};
+
+// ── paged layout: group blocks into page frames at explicit page breaks ──────
+const PagedDocument = (props: { blocks: Block[] }) => {
+  const pages = () => {
+    const result: { block: Block; index: number }[][] = [];
+    let current: { block: Block; index: number }[] = [];
+    props.blocks.forEach((block, index) => {
+      if (isPageBreakBlock(block.source)) {
+        if (current.length) result.push(current);
+        current = [];
+        return;
+      }
+      current.push({ block, index });
+    });
+    if (current.length) result.push(current);
+    return result.length ? result : [[]];
+  };
+
+  return (
+    <div class="preview-document">
+      <Index each={pages()}>
+        {(page, pageIndex) => (
+          <div class={pageFrameClasses(usePageConfig()())}>
+            <Index each={page()}>
+              {(item) => <PreviewBlockRow block={item().block} index={item().index} />}
+            </Index>
+            <div class="om-page-footer">
+              Page {pageIndex + 1} of {pages().length}
+            </div>
+          </div>
+        )}
+      </Index>
     </div>
   );
 };
@@ -436,6 +827,29 @@ export const PreviewPane = (props: PaneProps) => {
   const doc = useDocument;
   const settings = usePreviewSettings();
   const [dragOver, setDragOver] = createSignal(false);
+  const stickyOn = useStickyEnabled();
+  let previewBodyRef: HTMLDivElement | undefined;
+
+  // Set up footnote hover-preview tooltip on the preview container.
+  createEffect(() => {
+    if (!previewBodyRef) return;
+    const cleanup = setupFootnoteTooltip(previewBodyRef);
+    onCleanup(cleanup);
+  });
+
+  // Set up hover preview popovers (block-ref, citation, math).
+  createEffect(() => {
+    if (!previewBodyRef) return;
+    const cleanupHover = setupHoverPreviews(previewBodyRef);
+    onCleanup(cleanupHover);
+  });
+
+  // Set up heading permalink affordance (# button on hover).
+  createEffect(() => {
+    if (!previewBodyRef) return;
+    const cleanupAnchors = setupHeadingAnchors(previewBodyRef);
+    onCleanup(cleanupAnchors);
+  });
 
   const previewStyle = () => ({
     "--preview-font-family": PREVIEW_FONT_CSS[settings().fontFamily],
@@ -493,6 +907,37 @@ export const PreviewPane = (props: PaneProps) => {
     }
   };
 
+  const handlePreviewScroll = (e: Event) => {
+    if (!stickyOn()) return;
+    const container = e.currentTarget as HTMLElement;
+    const containerRect = container.getBoundingClientRect();
+    const rows = container.querySelectorAll("[data-block-id]");
+    for (const row of rows) {
+      const rect = (row as HTMLElement).getBoundingClientRect();
+      if (rect.bottom > containerRect.top) {
+        setActiveTopBlock((row as HTMLElement).dataset.blockId ?? null);
+        return;
+      }
+    }
+  };
+
+  // Handle click on [data-om-copy] buttons (code block copy)
+  const handlePreviewClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const copyBtn = target.closest("[data-om-copy]") as HTMLButtonElement | null;
+    if (!copyBtn) return;
+    e.stopPropagation();
+    const figure = copyBtn.closest("figure.om-code");
+    const code = figure?.querySelector("pre code");
+    const text = code?.textContent ?? "";
+    if (text && typeof navigator?.clipboard?.writeText === "function") {
+      void navigator.clipboard.writeText(text).then(() => {
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+      });
+    }
+  };
+
   return (
     <div class="pane">
       <div class="pane-header">
@@ -517,20 +962,55 @@ export const PreviewPane = (props: PaneProps) => {
       </div>
       <PreviewToolbar />
       <div
+        ref={previewBodyRef}
         class="pane-body preview"
-        classList={{ "drop-target": dragOver() }}
+        classList={{ "drop-target": dragOver(), "om-paged-preview": usePagedMode()() }}
         style={previewStyle()}
         onDrop={onDrop}
         onDragOver={onDragOver}
         onDragLeave={() => setDragOver(false)}
         onPaste={onPaste}
+        onClick={handlePreviewClick}
+        onScroll={handlePreviewScroll}
         tabIndex={0}
       >
-        <div class="preview-document">
-          <Index each={doc().blocks}>
-            {(block, index) => <PreviewBlockRow block={block()} index={index} />}
-          </Index>
-        </div>
+        <StickyHeader />
+        <Show when={useDiffMode()() && !usePagedMode()()}>
+          <DiffSummaryBanner />
+        </Show>
+        <Show
+          when={usePagedMode()()}
+          fallback={
+            <div class="preview-document">
+              <Show
+                when={useDiffMode()()}
+                fallback={
+                  <Index each={doc().blocks}>
+                    {(block, index) => <PreviewBlockRow block={block()} index={index} />}
+                  </Index>
+                }
+              >
+                <Index each={useDiffEntries()}>
+                  {(entry) => {
+                    const e = entry();
+                    if (e.status === "removed" && e.oldBlock) {
+                      return <PreviewGhostRow block={e.oldBlock} />;
+                    }
+                    const id = e.newBlock?.id;
+                    const live = doc().blocks.findIndex((b) => b.id === id);
+                    return (
+                      <Show when={live >= 0}>
+                        <PreviewBlockRow block={doc().blocks[live]!} index={live} />
+                      </Show>
+                    );
+                  }}
+                </Index>
+              </Show>
+            </div>
+          }
+        >
+          <PagedDocument blocks={doc().blocks} />
+        </Show>
         <Show when={dragOver()}>
           <div class="preview-drop-overlay">Drop image to insert</div>
         </Show>

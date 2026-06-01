@@ -446,6 +446,14 @@ const setPath = (p: string) => {
   if (historyPos >= 0) history[historyPos] = { ...history[historyPos]!, path: p };
 };
 
+// Decoupled hook so the diff store can snapshot a baseline on open/save without
+// creating an import cycle between document.ts and diff.ts.
+let baselineCaptureHook: (() => void) | null = null;
+export const registerBaselineCapture = (fn: () => void) => {
+  baselineCaptureHook = fn;
+};
+const captureBaseline = () => baselineCaptureHook?.();
+
 const replaceDocument = (
   file: LoadedMarkdownFile,
   activeFilePath: string | null,
@@ -459,6 +467,7 @@ const replaceDocument = (
     setAnnotationsRaw(nextAnnotations);
   });
   resetHistory(file.source, file.path);
+  captureBaseline();
 };
 
 const clampSourceOffset = (offset: number) => {
@@ -701,6 +710,90 @@ export const resizePanePair = (leftId: PaneId, rightId: PaneId, delta: number) =
   });
 };
 
+// --- outline + status bar visibility ---------------------------------------
+
+const [outlineVisible, setOutlineVisible] = createSignal(true);
+const [statusBarVisible, setStatusBarVisible] = createSignal(true);
+const [commentsVisible, setCommentsVisibleRaw] = createSignal(false);
+
+export const useOutlineVisible = () => outlineVisible;
+export const useStatusBarVisible = () => statusBarVisible;
+export const useCommentsVisible = () => commentsVisible;
+export const toggleOutline = () => setOutlineVisible((v) => !v);
+export const toggleStatusBar = () => setStatusBarVisible((v) => !v);
+export const toggleComments = () => setCommentsVisibleRaw((v) => !v);
+
+const [proofreadVisible, setProofreadVisible] = createSignal(false);
+export const useProofreadVisible = () => proofreadVisible;
+export const toggleProofread = () => setProofreadVisible((v) => !v);
+
+// --- scroll sync -----------------------------------------------------------
+
+const [scrollSync, setScrollSync] = createSignal(true);
+
+export const useScrollSync = () => scrollSync;
+export const toggleScrollSync = () => setScrollSync((v) => !v);
+
+// --- editor modes ----------------------------------------------------------
+
+const [typewriterMode, setTypewriterMode] = createSignal(false);
+const [focusMode, setFocusMode] = createSignal(false);
+const [distractionFree, setDistractionFreeRaw] = createSignal(false);
+
+export const useTypewriterMode = () => typewriterMode;
+export const useFocusMode = () => focusMode;
+export const useDistractionFree = () => distractionFree;
+export const toggleTypewriterMode = () => setTypewriterMode((v) => !v);
+export const toggleFocusMode = () => setFocusMode((v) => !v);
+
+// Distraction-free: stash prior layout and show only source pane, hide outline + status bar.
+let preDFLayout: { visible: Record<PaneId, boolean>; outline: boolean; statusBar: boolean } | null = null;
+
+export const toggleDistractionFree = () => {
+  if (distractionFree()) {
+    // Restore
+    if (preDFLayout) {
+      batch(() => {
+        setVisible(copyPaneVisibility(preDFLayout!.visible));
+        setOutlineVisible(preDFLayout!.outline);
+        setStatusBarVisible(preDFLayout!.statusBar);
+        setActiveLayout("custom");
+      });
+      preDFLayout = null;
+    }
+    setDistractionFreeRaw(false);
+  } else {
+    preDFLayout = {
+      visible: { ...visible() },
+      outline: outlineVisible(),
+      statusBar: statusBarVisible(),
+    };
+    batch(() => {
+      setVisible({ source: true, ir: false, preview: false });
+      setOutlineVisible(false);
+      setStatusBarVisible(false);
+      setActiveLayout("custom");
+    });
+    setDistractionFreeRaw(true);
+  }
+};
+
+// --- find & replace visibility ---------------------------------------------
+
+const [findOpen, setFindOpenRaw] = createSignal(false);
+const [findShowReplace, setFindShowReplace] = createSignal(false);
+
+export const useFindOpen = () => findOpen;
+export const useFindShowReplace = () => findShowReplace;
+export const openFind = () => { setFindOpenRaw(true); setFindShowReplace(false); };
+export const openFindReplace = () => { setFindOpenRaw(true); setFindShowReplace(true); };
+export const closeFind = () => setFindOpenRaw(false);
+
+const [findSeed, setFindSeedRaw] = createSignal("");
+export const useFindSeed = () => findSeed;
+export const setFindSeed = (s: string) => setFindSeedRaw(s);
+export const searchForSelection = (text: string) => { setFindSeed(text); openFind(); };
+
 // --- block-level edits -----------------------------------------------------
 
 // Replace one block's source slice in the document. Used by IR + Preview panes.
@@ -783,6 +876,8 @@ export type BlockTemplate = {
 };
 
 export const BLOCK_TEMPLATES: BlockTemplate[] = [
+  { id: "frontmatter", label: "Front matter", icon: "⚙",
+    snippet: "---\ntitle: \ndate: \n---\n\n", caret: 14 },
   { id: "h1", label: "Heading 1", icon: "H1", snippet: "# Heading\n\n", caret: 2 },
   { id: "h2", label: "Heading 2", icon: "H2", snippet: "## Heading\n\n", caret: 3 },
   { id: "h3", label: "Heading 3", icon: "H3", snippet: "### Heading\n\n", caret: 4 },
@@ -804,6 +899,8 @@ export const BLOCK_TEMPLATES: BlockTemplate[] = [
   { id: "table", label: "Table", icon: "▦",
     snippet: "| col a | col b |\n| ----- | ----- |\n| 1     | 2     |\n\n" },
   { id: "hr", label: "Divider", icon: "—", snippet: "---\n\n" },
+  { id: "math", label: "Math (display)", icon: "∑",
+    snippet: "$$\n\\int_0^1 x^2 dx\n$$\n\n" },
   { id: "link", label: "Link (paragraph)", icon: "🔗",
     snippet: "[link text](https://example.com)\n\n" },
   { id: "img", label: "Image (URL)", icon: "🖼",
@@ -979,6 +1076,7 @@ export const saveFile = async () => {
       setPath(saved.path);
       upsertProjectFile(saved.path);
       setActiveProjectFileRaw(activePathForLoadedFile(saved.path));
+      captureBaseline();
     } catch (error) {
       reportFileError("Save failed", error);
     }
@@ -996,6 +1094,7 @@ export const saveFile = async () => {
       await writable.write(src);
       await writable.close();
       setPath(handle.name);
+      captureBaseline();
       return;
     } catch (error) {
       if (isAbortError(error)) return;
@@ -1010,6 +1109,7 @@ export const saveFile = async () => {
   const a = Object.assign(document.createElement("a"), { href: url, download: p });
   a.click();
   URL.revokeObjectURL(url);
+  captureBaseline();
 };
 
 // --- native project (.ommd) + exports --------------------------------------
@@ -1154,6 +1254,23 @@ export const exportMarkdown = async () => {
     return;
   }
   downloadFile(suggested, body, "text/markdown");
+};
+
+export const exportHtml = async (htmlContent: string) => {
+  const suggested = `${baseName(path())}.html`;
+  try {
+    const wrote = await writeViaPicker(
+      suggested,
+      "HTML Document",
+      { "text/html": [".html", ".htm"] },
+      htmlContent,
+    );
+    if (wrote) return;
+  } catch (error) {
+    reportFileError("Export HTML failed", error);
+    return;
+  }
+  downloadFile(suggested, htmlContent, "text/html");
 };
 
 export const openFile = async () => {

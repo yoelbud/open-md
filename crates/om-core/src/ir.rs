@@ -28,12 +28,16 @@ pub enum BlockKind {
     BlockQuote,
     /// Callout / admonition (GitHub `[!NOTE]` style alert block quote).
     Callout,
+    /// YAML front matter (`---` fenced metadata at byte 0).
+    FrontMatter,
     /// Horizontal rule (`---`, `***`, `___`).
     ThematicBreak,
     /// Raw HTML block.
     Html,
     /// GFM task list (`- [ ]` / `- [x]`).
     TaskList,
+    /// Display math block (`$$ ... $$`).
+    Math,
     /// Image-only paragraph with optional preview sizing/alignment metadata.
     Image,
     /// Anything the segmenter did not recognise. Should never be emitted in

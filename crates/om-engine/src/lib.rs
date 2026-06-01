@@ -87,7 +87,83 @@ pub fn render_project_payload(
 #[cfg(test)]
 mod tests {
     use super::{render_document_payload, render_project_payload};
-    use om_core::{Annotations, BlockAnnotation, BlockKind, MarkRange};
+    use om_core::{segment, Annotations, BlockAnnotation, BlockKind, MarkRange};
+
+    /// Generate a synthetic Markdown document with `num_blocks` blocks.
+    fn generate_markdown(num_blocks: usize) -> String {
+        use std::fmt::Write;
+        let mut buf = String::with_capacity(num_blocks * 120);
+        for i in 0..num_blocks {
+            match i % 5 {
+                0 => {
+                    let level = (i % 6) + 1;
+                    let hashes = "#".repeat(level);
+                    let _ = write!(buf, "{hashes} Section {i}\n\n");
+                }
+                1 => {
+                    let _ = write!(buf, "Lorem ipsum dolor sit amet for block {i}.\n\n");
+                }
+                2 => {
+                    let _ = write!(
+                        buf,
+                        "- Item alpha {i}\n- Item beta {i}\n- Item gamma {i}\n\n"
+                    );
+                }
+                3 => {
+                    let _ = write!(buf, "```rust\nfn ex_{i}() {{}}\n```\n\n");
+                }
+                4 => buf.push_str("| A | B |\n|---|---|\n| 1 | 2 |\n\n"),
+                _ => unreachable!(),
+            }
+        }
+        buf
+    }
+
+    /// Regression guard: segment + render a moderately large document within a
+    /// generous wall-clock budget. Catches catastrophic O(n²) regressions
+    /// without being flaky on slow CI runners.
+    #[test]
+    fn large_document_performance_guard() {
+        use std::time::Instant;
+
+        let num_blocks = 2_000;
+        let source = generate_markdown(num_blocks);
+
+        let start = Instant::now();
+        let payload = render_document_payload(&source, "perf.md");
+        let elapsed = start.elapsed();
+
+        // Sanity: correct block count (each generator iteration produces one
+        // block, though merging may vary slightly — assert within 10%).
+        let count = payload.blocks.len();
+        assert!(
+            count >= num_blocks * 9 / 10,
+            "Expected ~{num_blocks} blocks, got {count}"
+        );
+
+        // Budget: 10 seconds is absurdly generous; a healthy build finishes in
+        // well under 1 second. This only catches catastrophic regressions.
+        assert!(
+            elapsed.as_secs() < 10,
+            "Pipeline took {elapsed:?} for {num_blocks} blocks — possible O(n²) regression"
+        );
+    }
+
+    /// Hash stability: identical input must produce identical hashes across two
+    /// segmentations.
+    #[test]
+    fn hash_stability_large_document() {
+        let source = generate_markdown(1_000);
+
+        let doc1 = segment(&source);
+        let doc2 = segment(&source);
+
+        assert_eq!(doc1.blocks.len(), doc2.blocks.len());
+        for (a, b) in doc1.blocks.iter().zip(doc2.blocks.iter()) {
+            assert_eq!(a.hash, b.hash, "Hash mismatch for block {}", a.id);
+            assert_eq!(a.src_range, b.src_range);
+        }
+    }
 
     #[test]
     fn renders_document_payload_with_block_html() {
@@ -138,5 +214,18 @@ mod tests {
             .html
             .contains("<mark class=\"om-mark\">important</mark>"));
         assert!(!payload.blocks[0].plain_html.contains("<mark"));
+    }
+
+    #[test]
+    fn front_matter_yields_first_block_with_metadata_html() {
+        let src = "---\ntitle: Hello World\nauthor: Jane\n---\n\n# Heading\n";
+        let payload = render_document_payload(src, "doc.md");
+
+        assert_eq!(payload.blocks[0].kind, BlockKind::FrontMatter);
+        assert_eq!(payload.blocks[0].src_range, (0, 40));
+        assert!(payload.blocks[0].html.contains("om-frontmatter"));
+        assert!(payload.blocks[0].html.contains("Hello World"));
+        assert!(payload.blocks[0].plain_html.contains("om-frontmatter-raw"));
+        assert_eq!(payload.blocks[1].kind, BlockKind::Heading);
     }
 }

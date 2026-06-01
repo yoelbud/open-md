@@ -1,5 +1,6 @@
 ---
 source: crates/om-render/tests/fixture_snapshot.rs
+assertion_line: 43
 expression: rendered
 snapshot_kind: text
 ---
@@ -22,7 +23,7 @@ snapshot_kind: text
 - - Heading
   - "<h2>Code</h2>\n"
 - - Code
-  - "<figure class=\"om-code\" data-lang=\"rust\"><figcaption>rust</figcaption><pre><code class=\"language-rust\">fn main() {\n    println!(\"hello, open-md\");\n}\n</code></pre>\n</figure>\n"
+  - "<figure class=\"om-code\" data-lang=\"rust\"><figcaption><span class=\"om-code-lang\">rust</span><button type=\"button\" class=\"om-code-copy\" data-om-copy aria-label=\"Copy code\">Copy</button></figcaption><div class=\"om-code-body\"><div class=\"om-code-lines\" aria-hidden=\"true\"><span>1</span><span>2</span><span>3</span></div><pre><code class=\"language-rust\">fn main() {\n    println!(\"hello, open-md\");\n}\n</code></pre></div></figure>\n"
 - - Heading
   - "<h2>Diagram</h2>\n"
 - - Code

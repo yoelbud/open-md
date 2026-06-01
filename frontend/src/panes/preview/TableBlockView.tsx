@@ -1,8 +1,22 @@
 import { createMemo, createSignal, Index, Show } from "solid-js";
 import type { Block, MarkdownTable, TableColumnAlignment } from "../../ipc/types";
-import { formatMarkdownTable, normalizeMarkdownTable, parseMarkdownTable } from "../../markdown/table";
+import { formatMarkdownTable, normalizeMarkdownTable, parseMarkdownTable, tableToCsv } from "../../markdown/table";
 import { withBlockTrailing } from "../../markdown/blockEdit";
 import { replaceBlockSource } from "../../store/document";
+import { useSpellcheck } from "../../store/spellcheck";
+import { copyText } from "../../store/blockActions";
+import { requestContextMenu } from "../ContextMenu";
+import type { CtxItem } from "../ContextMenu";
+import {
+  addColumn as modelAddColumn,
+  addRow as modelAddRow,
+  cloneTable,
+  deleteColumn as modelDeleteColumn,
+  deleteRow as modelDeleteRow,
+  setAlign as modelSetAlign,
+  sortByColumn as modelSortByColumn,
+} from "./tableModel";
+import type { SortDirection } from "./tableModel";
 
 type Props = {
   block: Block;
@@ -23,14 +37,6 @@ const ALIGNMENT_OPTIONS: { id: TableColumnAlignment; label: string }[] = [
   { id: "right", label: "Right" },
 ];
 
-const cloneTable = (table: MarkdownTable): MarkdownTable => ({
-  headers: [...table.headers],
-  alignments: [...table.alignments],
-  rows: table.rows.map((row) => [...row]),
-});
-
-const emptyRow = (cols: number) => Array.from({ length: cols }, () => "");
-
 const alignStyle = (alignment: TableColumnAlignment | undefined) =>
   alignment && alignment !== "default" ? alignment : undefined;
 
@@ -47,6 +53,7 @@ export const TableBlockView = (props: Props) => {
     ),
   );
   const [activeCell, setActiveCell] = createSignal<ActiveCell | null>(null);
+  const spellcheck = useSpellcheck();
 
   const commit = (next: MarkdownTable) => {
     replaceBlockSource(props.block, withBlockTrailing(props.block, formatMarkdownTable(next)));
@@ -63,10 +70,9 @@ export const TableBlockView = (props: Props) => {
   };
 
   const addRow = () => {
-    const next = cloneTable(table());
     const selected = activeCell();
-    const index = selected?.section === "body" ? selected.row + 1 : next.rows.length;
-    next.rows.splice(index, 0, emptyRow(next.headers.length));
+    const index = selected?.section === "body" ? selected.row + 1 : table().rows.length;
+    const next = modelAddRow(table(), index);
     setActiveCell({ section: "body", row: index, col: selected?.col ?? 0 });
     commit(next);
   };
@@ -74,19 +80,17 @@ export const TableBlockView = (props: Props) => {
   const deleteRow = () => {
     const selected = activeCell();
     if (!selected || selected.section !== "body") return;
-    const next = cloneTable(table());
-    next.rows.splice(selected.row, 1);
+    const next = modelDeleteRow(table(), selected.row);
     setActiveCell(null);
     commit(next);
   };
 
   const addColumn = () => {
-    const next = cloneTable(table());
     const selected = activeCell();
-    const index = selected ? selected.col + 1 : next.headers.length;
-    next.headers.splice(index, 0, `Column ${index + 1}`);
-    next.alignments.splice(index, 0, "default");
-    for (const row of next.rows) row.splice(index, 0, "");
+    const index = selected ? selected.col + 1 : table().headers.length;
+    const next = modelAddColumn(table(), index);
+    // Give the new column a default header name
+    next.headers[index] = `Column ${index + 1}`;
     setActiveCell({ section: "header", row: 0, col: index });
     commit(next);
   };
@@ -95,19 +99,19 @@ export const TableBlockView = (props: Props) => {
     const selected = activeCell();
     const current = table();
     if (!selected || current.headers.length <= 1) return;
-    const next = cloneTable(current);
-    next.headers.splice(selected.col, 1);
-    next.alignments.splice(selected.col, 1);
-    for (const row of next.rows) row.splice(selected.col, 1);
+    const next = modelDeleteColumn(current, selected.col);
     setActiveCell(null);
     commit(next);
   };
 
   const setAlignment = (alignment: TableColumnAlignment) => {
-    const next = cloneTable(table());
     const col = activeCell()?.col ?? 0;
-    next.alignments[col] = alignment;
-    commit(next);
+    commit(modelSetAlign(table(), col, alignment));
+  };
+
+  const sortColumn = (direction: SortDirection) => {
+    const col = activeCell()?.col ?? 0;
+    commit(modelSortByColumn(table(), col, direction));
   };
 
   const isActive = (section: CellSection, row: number, col: number) => {
@@ -116,6 +120,41 @@ export const TableBlockView = (props: Props) => {
   };
 
   const selectedAlignment = () => table().alignments[activeCell()?.col ?? 0] ?? "default";
+
+  const addColWithHeader = (index: number): MarkdownTable => {
+    const next = modelAddColumn(table(), index);
+    next.headers[index] = `Column ${index + 1}`;
+    return next;
+  };
+
+  const tableCellItems = (section: CellSection, row: number, col: number): CtxItem[] => {
+    const alignSub: CtxItem[] = ALIGNMENT_OPTIONS.map((opt) => ({
+      label: opt.label,
+      action: () => commit(modelSetAlign(table(), col, opt.id)),
+    }));
+    const sortSub: CtxItem[] = [
+      { label: "A→Z", action: () => commit(modelSortByColumn(table(), col, "asc")) },
+      { label: "Z→A", action: () => commit(modelSortByColumn(table(), col, "desc")) },
+    ];
+    return [
+      { label: "Insert row above", action: () => commit(modelAddRow(table(), section === "body" ? row : 0)) },
+      { label: "Insert row below", action: () => commit(modelAddRow(table(), section === "body" ? row + 1 : table().rows.length)) },
+      { label: "Delete row", danger: true, disabled: section !== "body", action: () => commit(modelDeleteRow(table(), row)) },
+      { label: "Insert column left", separatorBefore: true, action: () => commit(addColWithHeader(col)) },
+      { label: "Insert column right", action: () => commit(addColWithHeader(col + 1)) },
+      { label: "Delete column", danger: true, disabled: table().headers.length <= 1, action: () => commit(modelDeleteColumn(table(), col)) },
+      { label: "Align", separatorBefore: true, submenu: alignSub },
+      { label: "Sort by column", submenu: sortSub },
+      { label: "Copy as CSV", separatorBefore: true, action: () => void copyText(tableToCsv(table())) },
+      { label: "Copy as Markdown", action: () => void copyText(formatMarkdownTable(table())) },
+    ];
+  };
+
+  const handleCellContextMenu = (e: MouseEvent, section: CellSection, row: number, col: number) => {
+    e.preventDefault();
+    setActiveCell({ section, row, col });
+    requestContextMenu({ x: e.clientX, y: e.clientY, items: tableCellItems(section, row, col) });
+  };
 
   return (
     <div class="om-table-block">
@@ -155,6 +194,10 @@ export const TableBlockView = (props: Props) => {
             </button>
           )}
         </Index>
+        <span class="om-table-divider" />
+        <span class="om-table-label">Sort</span>
+        <button type="button" class="om-table-btn" onClick={() => sortColumn("asc")}>A→Z</button>
+        <button type="button" class="om-table-btn" onClick={() => sortColumn("desc")}>Z→A</button>
         <button type="button" class="om-table-btn" onClick={props.onEditSource}>MD</button>
       </div>
 
@@ -167,9 +210,11 @@ export const TableBlockView = (props: Props) => {
                   <th
                     classList={{ selected: isActive("header", 0, col) }}
                     style={{ "text-align": alignStyle(table().alignments[col]) }}
+                    onContextMenu={(e) => handleCellContextMenu(e, "header", 0, col)}
                   >
                     <input
                       value={cell()}
+                      spellcheck={spellcheck()}
                       aria-label={`Header ${col + 1}`}
                       onFocus={() => setActiveCell({ section: "header", row: 0, col })}
                       onInput={(e) => updateCell("header", 0, col, e.currentTarget.value)}
@@ -198,9 +243,11 @@ export const TableBlockView = (props: Props) => {
                         <td
                           classList={{ selected: isActive("body", rowIndex, col) }}
                           style={{ "text-align": alignStyle(table().alignments[col]) }}
+                          onContextMenu={(e) => handleCellContextMenu(e, "body", rowIndex, col)}
                         >
                           <input
                             value={cell()}
+                            spellcheck={spellcheck()}
                             aria-label={`Row ${rowIndex + 1}, column ${col + 1}`}
                             onFocus={() => setActiveCell({ section: "body", row: rowIndex, col })}
                             onInput={(e) => updateCell("body", rowIndex, col, e.currentTarget.value)}

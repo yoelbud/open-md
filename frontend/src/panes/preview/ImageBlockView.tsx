@@ -29,6 +29,7 @@ export const ImageBlockView = (props: Props) => {
 
   const [selected, setSelected] = createSignal(false);
   const [dragging, setDragging] = createSignal(false);
+  const [zoomed, setZoomed] = createSignal(false);
   let wrapRef: HTMLDivElement | undefined;
   let imgRef: HTMLImageElement | undefined;
 
@@ -92,6 +93,21 @@ export const ImageBlockView = (props: Props) => {
     return parts.join(" · ");
   };
 
+  // ── click-to-zoom (lightbox) ────────────────────────────────────────────
+  const handleImageClick = (e: MouseEvent) => {
+    // Don't zoom if selecting or already have toolbar up
+    if (selected()) return;
+    e.stopPropagation();
+    setZoomed(true);
+  };
+
+  const closeZoom = () => setZoomed(false);
+
+  // Close on Escape
+  const handleZoomKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") closeZoom();
+  };
+
   return (
     <div
       ref={wrapRef}
@@ -115,26 +131,33 @@ export const ImageBlockView = (props: Props) => {
         }
       >
         {(img) => (
-          <div class="om-img-inner">
-            <img
-              ref={imgRef}
-              src={resolveAssetSrc(img().src)}
-              alt={img().alt}
-              title={img().title || undefined}
-              style={{
-                width: img().width ?? undefined,
-                height: img().height ?? undefined,
-                "max-width": img().width || img().height ? undefined : "100%",
-              }}
-              draggable={false}
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).classList.add("broken");
-              }}
-            />
-            <Show when={selected()}>
-              <div class="om-img-handle" onMouseDown={startResize} title="Drag to resize" />
+          <>
+            <div class="om-img-inner">
+              <img
+                ref={imgRef}
+                src={resolveAssetSrc(img().src)}
+                alt={img().alt}
+                title={img().title || undefined}
+                style={{
+                  width: img().width ?? undefined,
+                  height: img().height ?? undefined,
+                  "max-width": img().width || img().height ? undefined : "100%",
+                  cursor: selected() ? undefined : "zoom-in",
+                }}
+                draggable={false}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).classList.add("broken");
+                }}
+                onClick={handleImageClick}
+              />
+              <Show when={selected()}>
+                <div class="om-img-handle" onMouseDown={startResize} title="Drag to resize" />
+              </Show>
+            </div>
+            <Show when={img().alt}>
+              <figcaption class="om-img-caption">{img().alt}</figcaption>
             </Show>
-          </div>
+          </>
         )}
       </Show>
 
@@ -177,15 +200,22 @@ export const ImageBlockView = (props: Props) => {
             ))}
             <button
               class="om-img-btn"
-              title="Edit alt text"
+              title="Edit alt text / caption"
               onClick={() => {
                 const cur = initial();
                 if (!cur) return;
-                const v = prompt("Alt text:", cur.alt);
+                const v = prompt("Alt text (shown as caption):", cur.alt);
                 if (v !== null) commit({ alt: v });
               }}
             >
-              Alt
+              Caption
+            </button>
+            <button
+              class="om-img-btn"
+              title="Zoom image"
+              onClick={() => setZoomed(true)}
+            >
+              🔍
             </button>
             <button
               class="om-img-btn"
@@ -208,6 +238,23 @@ export const ImageBlockView = (props: Props) => {
             </button>
             <span class="om-img-info">{renderInfo()}</span>
           </div>
+        </div>
+      </Show>
+
+      <Show when={zoomed()}>
+        {(() => {
+          // Attach/detach keyboard listener for ESC
+          if (typeof document !== "undefined") {
+            document.addEventListener("keydown", handleZoomKey);
+            onCleanup(() => document.removeEventListener("keydown", handleZoomKey));
+          }
+          return null;
+        })()}
+        <div class="om-img-zoom-overlay" onClick={closeZoom}>
+          <img
+            src={resolveAssetSrc(initial()!.src)}
+            alt={initial()!.alt}
+          />
         </div>
       </Show>
     </div>

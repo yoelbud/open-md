@@ -191,9 +191,152 @@ const blockKindFromLine = (line: string): BlockKind => {
   return "paragraph";
 };
 
+/** Detect YAML front matter at the very start of a source string. */
+const detectFrontMatter = (source: string): number | null => {
+  if (!source.startsWith("---\n") && !source.startsWith("---\r\n")) return null;
+  const newlineLen = source.startsWith("---\r\n") ? 5 : 4;
+  const body = source.slice(newlineLen);
+  const lines = body.split(/\n/);
+  let offset = newlineLen;
+  for (const line of lines) {
+    const trimmed = line.replace(/\r$/, "");
+    if (trimmed === "---") {
+      return offset + line.length + 1;
+    }
+    offset += line.length + 1;
+  }
+  return null;
+};
+
+/** Parse simple key: value pairs from front matter source. */
+const parseFrontMatterFields = (source: string): [string, string][] => {
+  const fields: [string, string][] = [];
+  const lines = source.split(/\r?\n/);
+  // Skip opening/closing fences.
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === "---" || trimmed === "" || trimmed.startsWith("#")) continue;
+    const colon = trimmed.indexOf(":");
+    if (colon > 0) {
+      fields.push([trimmed.slice(0, colon).trim(), trimmed.slice(colon + 1).trim()]);
+    }
+  }
+  return fields;
+};
+
 // Very small inline renderer for the M0 demo (bold/italic/code/link only).
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * Post-process rendered inline HTML to apply text marks (sub, sup, ins, mark),
+ * skipping content inside `<code>` and `<pre>` tags. Mirrors
+ * `apply_inline_marks` in `crates/om-render`.
+ */
+const applyInlineMarks = (html: string): string => {
+  let result = "";
+  let i = 0;
+  while (i < html.length) {
+    if (html[i] === "<") {
+      // Check for <code or <pre — skip to matching close tag.
+      const lower = html.slice(i, i + 5).toLowerCase();
+      if (lower.startsWith("<code") || lower.startsWith("<pre")) {
+        const isPre = lower.startsWith("<pre");
+        const closeTag = isPre ? "</pre>" : "</code>";
+        const closeIdx = html.toLowerCase().indexOf(closeTag, i + 1);
+        if (closeIdx >= 0) {
+          const end = closeIdx + closeTag.length;
+          result += html.slice(i, end);
+          i = end;
+          continue;
+        }
+      }
+      // Any other tag — copy verbatim.
+      const gt = html.indexOf(">", i);
+      if (gt >= 0) {
+        result += html.slice(i, gt + 1);
+        i = gt + 1;
+      } else {
+        result += html.slice(i);
+        break;
+      }
+      continue;
+    }
+    // Find next tag.
+    const nextTag = html.indexOf("<", i);
+    const segEnd = nextTag >= 0 ? nextTag : html.length;
+    result += transformTextMarks(html.slice(i, segEnd));
+    i = segEnd;
+  }
+  return result;
+};
+
+/** Replace mark delimiters in a plain-text segment (no HTML tags). */
+const transformTextMarks = (text: string): string => {
+  let s = text;
+  // ==text== → <mark>text</mark>
+  s = s.replace(/==(\S[^=\n]*?\S)==|==(\S)==/g, (_m, g1, g2) => `<mark>${g1 ?? g2}</mark>`);
+  // ++text++ → <ins>text</ins>
+  s = s.replace(/\+\+(\S[^+\n]*?\S)\+\+|\+\+(\S)\+\+/g, (_m, g1, g2) => `<ins>${g1 ?? g2}</ins>`);
+  // ^text^ → <sup>text</sup>
+  s = s.replace(/\^(\S[^^\n]*?\S)\^|\^(\S)\^/g, (_m, g1, g2) => `<sup>${g1 ?? g2}</sup>`);
+  // ~text~ → <sub>text</sub> (single tilde only, not part of ~~)
+  s = replaceSingleTilde(s);
+  return s;
+};
+
+/** Handle ~text~ → <sub>text</sub>, avoiding ~~ collision. */
+const replaceSingleTilde = (input: string): string => {
+  let result = "";
+  let i = 0;
+  while (i < input.length) {
+    if (input[i] === "~") {
+      // Skip double tildes.
+      if (i + 1 < input.length && input[i + 1] === "~") {
+        result += "~~";
+        i += 2;
+        continue;
+      }
+      // Check preceding is not a tilde.
+      if (i > 0 && input[i - 1] === "~") {
+        result += "~";
+        i += 1;
+        continue;
+      }
+      // Try to find matching close tilde.
+      const contentStart = i + 1;
+      if (contentStart < input.length && input[contentStart] !== " " && input[contentStart] !== "\n") {
+        const closeIdx = findSingleTildeClose(input, contentStart);
+        if (closeIdx !== null) {
+          const content = input.slice(contentStart, closeIdx);
+          if (!content.endsWith(" ") && content.length > 0) {
+            result += `<sub>${content}</sub>`;
+            i = closeIdx + 1;
+            continue;
+          }
+        }
+      }
+      result += "~";
+      i += 1;
+    } else {
+      result += input[i];
+      i += 1;
+    }
+  }
+  return result;
+};
+
+/** Find closing single tilde (not part of ~~, not across newlines). */
+const findSingleTildeClose = (text: string, start: number): number | null => {
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === "\n") return null;
+    if (text[i] === "~") {
+      if (i + 1 < text.length && text[i + 1] === "~") return null;
+      return i;
+    }
+  }
+  return null;
+};
 
 const renderInline = (s: string, extra: string[] = []): string => {
   // Pull images out first (before escaping) so we can emit raw <img> tags.
@@ -213,7 +356,14 @@ const renderInline = (s: string, extra: string[] = []): string => {
     placeholders.push(tag);
     return `${PH_OPEN}${placeholders.length - 1}${PH_CLOSE}`;
   });
-  return escapeHtml(withImgs)
+  // Footnote references: [^id] → <sup class="om-fnref" ...> (not [^id]:)
+  const withFnRefs = withImgs.replace(/\[\^([^\]\s]+)\](?!:)/g, (_m, id) => {
+    const escaped = escapeAttr(id);
+    const tag = `<sup class="om-fnref" data-om-fnref="${escaped}"><a href="#fn-${escaped}">${escapeHtml(id)}</a></sup>`;
+    placeholders.push(tag);
+    return `${PH_OPEN}${placeholders.length - 1}${PH_CLOSE}`;
+  });
+  return applyInlineMarks(escapeHtml(withFnRefs)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
@@ -222,7 +372,7 @@ const renderInline = (s: string, extra: string[] = []): string => {
       /\[([^\]]+)\]\(([^)]+)\)/g,
       '<a href="$2" target="_blank" rel="noreferrer">$1</a>',
     )
-    .replace(/\u0000PH(\d+)\u0000/g, (_m, i) => placeholders[+i] ?? "");
+    .replace(/\u0000PH(\d+)\u0000/g, (_m, i) => placeholders[+i] ?? ""));
 };
 
 const tableAlignAttr = (alignment: MarkdownTable["alignments"][number]) =>
@@ -253,6 +403,30 @@ const fencedCode = (source: string): { info: string; body: string } | null => {
 const isMermaidInfo = (info: string): boolean =>
   (info.split(/\s+/)[0] ?? "").toLowerCase() === "mermaid";
 
+/** Parse the inner TeX from a display-math block (`$$ ... $$`). */
+const parseDisplayMath = (source: string): string | null => {
+  const trimmed = source.trim();
+  if (!trimmed.startsWith("$$") || !trimmed.endsWith("$$")) return null;
+  const inner = trimmed.slice(2, -2).trim();
+  return inner.length > 0 ? inner : null;
+};
+
+type FootnoteDef = { id: string; body: string };
+
+/** Parse a footnote definition block `[^id]: body text`. */
+const parseFootnoteDefinition = (source: string): FootnoteDef | null => {
+  const match = /^\[\^([^\]\s]+)\]:\s*(.*)$/s.exec(source);
+  if (!match) return null;
+  return { id: match[1]!, body: match[2]!.trim() };
+};
+
+/** Render a footnote definition to om-fndef HTML. */
+const renderFootnoteDefinition = (def: FootnoteDef): string => {
+  const id = escapeAttr(def.id);
+  const body = renderInline(def.body);
+  return `<div class="om-fndef" id="fn-${id}" data-om-fndef="${id}"><span class="om-fndef-label">${escapeHtml(def.id)}.</span> <span class="om-fndef-body">${body}</span></div>`;
+};
+
 const previewMetaForBlock = (kind: BlockKind, source: string): BlockPreviewMeta | undefined => {
   if (kind !== "table") return undefined;
   const table = parseMarkdownTable(source);
@@ -262,6 +436,12 @@ const previewMetaForBlock = (kind: BlockKind, source: string): BlockPreviewMeta 
 const renderBlock = (kind: BlockKind, source: string, marks: string[] = []): string => {
   const trimmed = source.trimEnd();
   switch (kind) {
+    case "front_matter": {
+      const fields = parseFrontMatterFields(trimmed);
+      if (fields.length === 0) return `<div class="om-frontmatter"><em>(empty metadata)</em></div>`;
+      const rows = fields.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join("");
+      return `<div class="om-frontmatter"><table>\n${rows}\n</table></div>`;
+    }
     case "heading": {
       const m = /^(#{1,6})\s+(.*)$/m.exec(trimmed);
       if (!m) return `<p>${renderInline(trimmed, marks)}</p>`;
@@ -312,11 +492,21 @@ const renderBlock = (kind: BlockKind, source: string, marks: string[] = []): str
     }
     case "html":
       return trimmed;
+    case "math": {
+      const tex = parseDisplayMath(trimmed);
+      if (tex) return `<div class="om-math-display" data-om-math="display">${escapeHtml(tex)}</div>`;
+      return `<p>${renderInline(trimmed, marks)}</p>`;
+    }
     case "image": {
       const img = parseImageBlock(trimmed);
       if (!img) return `<p>${renderInline(trimmed, marks)}</p>`;
       const alignClass = img.align ? ` om-img-${img.align}` : "";
       return `<div class="om-img-wrap${alignClass}">${renderImgTag(img)}</div>`;
+    }
+    case "paragraph": {
+      const fnDef = parseFootnoteDefinition(trimmed);
+      if (fnDef) return renderFootnoteDefinition(fnDef);
+      return `<p>${renderInline(trimmed, marks)}</p>`;
     }
     default:
       return `<p>${renderInline(trimmed, marks)}</p>`;
@@ -330,6 +520,8 @@ const renderBlock = (kind: BlockKind, source: string, marks: string[] = []): str
 const renderBlockPlain = (kind: BlockKind, source: string): string => {
   const trimmed = source.trimEnd();
   switch (kind) {
+    case "front_matter":
+      return `<pre class="om-frontmatter-raw"><code>${escapeHtml(trimmed)}</code></pre>`;
     case "heading": {
       const m = /^(#{1,6})\s+(.*)$/m.exec(trimmed);
       if (!m) return `<p>${renderInline(trimmed)}</p>`;
@@ -364,12 +556,19 @@ const renderBlockPlain = (kind: BlockKind, source: string): string => {
     }
     case "html":
       return trimmed;
+    case "math":
+      return `<pre class="om-math-raw"><code>${escapeHtml(trimmed)}</code></pre>`;
     case "image": {
       const img = parseImageBlock(trimmed);
       if (!img) return `<p>${renderInline(trimmed)}</p>`;
       return `<p><img src="${escapeAttr(img.src)}" data-om-src="${escapeAttr(
         img.src,
       )}" alt="${escapeAttr(img.alt)}"/></p>`;
+    }
+    case "paragraph": {
+      const fnDef = parseFootnoteDefinition(trimmed);
+      if (fnDef) return renderFootnoteDefinition(fnDef);
+      return `<p>${renderInline(trimmed)}</p>`;
     }
     default:
       return `<p>${renderInline(trimmed)}</p>`;
@@ -399,9 +598,29 @@ export const parseDocument = (
 ): DocumentPayload => {
   // Split on blank lines, preserving fenced code blocks as one unit.
   const blocks: Block[] = [];
-  const lines = source.split(/\r?\n/);
+
+  // Detect front matter at byte 0 before the main segmentation loop.
+  let mainStart = 0;
+  const fmEnd = detectFrontMatter(source);
+  if (fmEnd !== null) {
+    const fmSlice = source.slice(0, fmEnd);
+    const hash = hashStr(fmSlice);
+    blocks.push({
+      id: `b${hash.toString(16).padStart(8, "0")}-0`,
+      kind: "front_matter",
+      src_range: [0, fmEnd],
+      hash,
+      source: fmSlice,
+      html: renderBlock("front_matter", fmSlice),
+      plain_html: renderBlockPlain("front_matter", fmSlice),
+    });
+    mainStart = fmEnd;
+  }
+
+  const mainSource = source.slice(mainStart);
+  const lines = mainSource.split(/\r?\n/);
   let i = 0;
-  let offset = 0;
+  let offset = mainStart;
 
   while (i < lines.length) {
     // Skip blank lines.
@@ -436,9 +655,11 @@ export const parseDocument = (
 
     const kind: BlockKind = parseImageBlock(buf)
       ? "image"
-      : /^\s*>/.test(startLine) && parseCalloutStub(buf)
-        ? "callout"
-        : blockKindFromLine(startLine);
+      : parseDisplayMath(buf) !== null
+        ? "math"
+        : /^\s*>/.test(startLine) && parseCalloutStub(buf)
+          ? "callout"
+          : blockKindFromLine(startLine);
     const slice = source.slice(start, offset);
     const hash = hashStr(slice);
     const preview = previewMetaForBlock(kind, buf);

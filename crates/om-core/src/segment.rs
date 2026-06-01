@@ -9,8 +9,10 @@ use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use xxhash_rust::xxh3::xxh3_64;
 
 use crate::callout::is_callout;
+use crate::frontmatter::detect_front_matter;
 use crate::image::parse_image_block;
 use crate::ir::{Block, BlockKind, Document};
+use crate::math::is_display_math;
 
 const fn opts() -> Options {
     Options::ENABLE_TABLES
@@ -23,7 +25,7 @@ const fn opts() -> Options {
 const fn kind_for_tag(tag: &Tag<'_>) -> Option<BlockKind> {
     Some(match tag {
         Tag::Heading { .. } => BlockKind::Heading,
-        Tag::Paragraph => BlockKind::Paragraph,
+        Tag::Paragraph | Tag::FootnoteDefinition(_) => BlockKind::Paragraph,
         Tag::List(_) => BlockKind::List,
         Tag::CodeBlock(_) => BlockKind::Code,
         Tag::Table(_) => BlockKind::Table,
@@ -38,10 +40,24 @@ const fn kind_for_tag(tag: &Tag<'_>) -> Option<BlockKind> {
 /// Each top-level block in the source is returned with its byte range,
 /// raw source text, and content hash. Lists, tables and block quotes are
 /// emitted as a single block (their nested contents are not split out).
+///
+/// A YAML front matter fence (`---\n...\n---\n`) at byte 0 is emitted as a
+/// [`BlockKind::FrontMatter`] block before the remaining Markdown is parsed.
 #[must_use]
 pub fn segment(source: &str) -> Document {
-    let parser = Parser::new_ext(source, opts()).into_offset_iter();
     let mut blocks = Vec::new();
+
+    // Detect front matter before the pulldown_cmark pass. Front matter is
+    // only valid at byte 0 so it cannot be confused with a thematic break.
+    let remainder_start = if let Some((start, end)) = detect_front_matter(source) {
+        push_block(&mut blocks, source, start, end, BlockKind::FrontMatter);
+        end
+    } else {
+        0
+    };
+
+    let remainder = &source[remainder_start..];
+    let parser = Parser::new_ext(remainder, opts()).into_offset_iter();
     let mut depth: i32 = 0;
     let mut current_kind: Option<BlockKind> = None;
     let mut current_start: usize = 0;
@@ -51,7 +67,7 @@ pub fn segment(source: &str) -> Document {
             Event::Start(ref tag) => {
                 if depth == 0 {
                     current_kind = kind_for_tag(tag).or(Some(BlockKind::Unknown));
-                    current_start = range.start;
+                    current_start = range.start + remainder_start;
                 }
                 depth += 1;
             }
@@ -62,12 +78,19 @@ pub fn segment(source: &str) -> Document {
                 | TagEnd::CodeBlock
                 | TagEnd::Table
                 | TagEnd::BlockQuote(_)
-                | TagEnd::HtmlBlock,
+                | TagEnd::HtmlBlock
+                | TagEnd::FootnoteDefinition,
             ) => {
                 depth -= 1;
                 if depth == 0 {
                     let kind = current_kind.take().unwrap_or(BlockKind::Unknown);
-                    push_block(&mut blocks, source, current_start, range.end, kind);
+                    push_block(
+                        &mut blocks,
+                        source,
+                        current_start,
+                        range.end + remainder_start,
+                        kind,
+                    );
                 }
             }
             Event::End(_) => {
@@ -80,8 +103,8 @@ pub fn segment(source: &str) -> Document {
                 push_block(
                     &mut blocks,
                     source,
-                    range.start,
-                    range.end,
+                    range.start + remainder_start,
+                    range.end + remainder_start,
                     BlockKind::ThematicBreak,
                 );
             }
@@ -96,6 +119,7 @@ fn push_block(out: &mut Vec<Block>, source: &str, start: usize, end: usize, kind
     let slice = &source[start..end];
     let kind = match kind {
         BlockKind::Paragraph if parse_image_block(slice).is_some() => BlockKind::Image,
+        BlockKind::Paragraph if is_display_math(slice) => BlockKind::Math,
         BlockKind::BlockQuote if is_callout(slice) => BlockKind::Callout,
         other => other,
     };
@@ -201,6 +225,20 @@ mod tests {
     }
 
     #[test]
+    fn display_math_emits_math_kind() {
+        let doc = segment("$$\n\\int_0^1 x^2 dx\n$$\n");
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::Math);
+    }
+
+    #[test]
+    fn single_line_display_math_emits_math_kind() {
+        let doc = segment("$$E=mc^2$$\n");
+
+        assert_eq!(doc.blocks[0].kind, BlockKind::Math);
+    }
+
+    #[test]
     fn callout_src_range_slices_back_to_source() {
         let src = "intro\n\n> [!TIP]\n> Be tidy.\n";
         let doc = segment(src);
@@ -211,5 +249,44 @@ mod tests {
             .expect("callout block");
         let (s, e) = callout.src_range;
         assert_eq!(&src[s..e], callout.source);
+    }
+
+    #[test]
+    fn front_matter_emitted_as_first_block() {
+        let src = "---\ntitle: Hello\n---\n\n# Heading\n\npara\n";
+        let doc = segment(src);
+        assert_eq!(doc.blocks[0].kind, BlockKind::FrontMatter);
+        assert_eq!(doc.blocks[0].source, "---\ntitle: Hello\n---\n");
+        assert_eq!(doc.blocks[0].src_range, (0, 21));
+        assert_eq!(doc.blocks[1].kind, BlockKind::Heading);
+        assert_eq!(doc.blocks[2].kind, BlockKind::Paragraph);
+    }
+
+    #[test]
+    fn front_matter_src_ranges_are_absolute() {
+        let src = "---\nkey: val\n---\n\n# H\n\npara\n";
+        let doc = segment(src);
+        for b in &doc.blocks {
+            let (s, e) = b.src_range;
+            assert!(e <= src.len(), "end {} exceeds source len {}", e, src.len());
+            assert_eq!(&src[s..e], b.source);
+        }
+    }
+
+    #[test]
+    fn thematic_break_not_confused_with_front_matter() {
+        let src = "para\n\n---\n\nafter\n";
+        let doc = segment(src);
+        assert_eq!(doc.blocks[0].kind, BlockKind::Paragraph);
+        assert_eq!(doc.blocks[1].kind, BlockKind::ThematicBreak);
+        assert_eq!(doc.blocks[2].kind, BlockKind::Paragraph);
+    }
+
+    #[test]
+    fn front_matter_hash_is_stable() {
+        let src = "---\ntitle: X\n---\n\n# H\n";
+        let a = segment(src);
+        let b = segment(src);
+        assert_eq!(a.blocks[0].hash, b.blocks[0].hash);
     }
 }
