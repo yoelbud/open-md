@@ -20,6 +20,8 @@ import { InsertMenu } from "../InsertMenu";
 import { charIndex, requestMarkToolbar, supportsMarks } from "../MarkToolbar";
 import { fromEditableText, toEditableText } from "../../markdown/blockEdit";
 import type { Block } from "../../ipc/types";
+import { StickyHeader } from "../StickyHeader";
+import { setActiveTopBlock, useStickyEnabled } from "../../store/stickyScroll";
 
 // ── selection state (module-level so toolbar and rows share it) ─────────────
 const [selected, setSelected] = createSignal<Set<string>>(new Set());
@@ -120,6 +122,7 @@ const IrBlockRow = (props: { block: Block; index: number }) => {
   return (
     <div
       class="ir-block"
+      data-block-id={props.block.id}
       classList={{ selected: isSelected(), "editing-point": isEditingPoint() }}
       onClick={handleRowClick}
     >
@@ -245,6 +248,21 @@ type PaneProps = {
 
 export const IrPane = (props: PaneProps) => {
   const doc = useDocument;
+  const stickyOn = useStickyEnabled();
+
+  const handleIrScroll = (e: Event) => {
+    if (!stickyOn()) return;
+    const container = e.currentTarget as HTMLElement;
+    const containerRect = container.getBoundingClientRect();
+    const rows = container.querySelectorAll("[data-block-id]");
+    for (const row of rows) {
+      const rect = (row as HTMLElement).getBoundingClientRect();
+      if (rect.bottom > containerRect.top) {
+        setActiveTopBlock((row as HTMLElement).dataset.blockId ?? null);
+        return;
+      }
+    }
+  };
 
   // Keyboard shortcuts when focus is inside the IR pane.
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -274,7 +292,8 @@ export const IrPane = (props: PaneProps) => {
         </span>
       </div>
       <SelectionToolbar />
-      <div class="pane-body">
+      <div class="pane-body" onScroll={handleIrScroll}>
+        <StickyHeader />
         <Index each={doc().blocks}>
           {(block, index) => <IrBlockRow block={block()} index={index} />}
         </Index>

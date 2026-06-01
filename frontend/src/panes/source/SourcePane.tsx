@@ -29,6 +29,8 @@ import {
   hintNameFromFile,
   ingestAndBuildSnippet,
 } from "../../store/imageDrop";
+import { StickyHeader } from "../StickyHeader";
+import { setActiveTopBlock, useStickyEnabled } from "../../store/stickyScroll";
 
 type PaneProps = {
   layoutControls?: JSX.Element;
@@ -53,6 +55,7 @@ export const SourcePane = (props: PaneProps) => {
   const scrollSyncEnabled = useScrollSync();
   const spellcheck = useSpellcheck();
   const doc = useDocument;
+  const stickyOn = useStickyEnabled();
   const [scrollTop, setScrollTop] = createSignal(0);
   const [metrics, setMetrics] = createSignal<SourceMetrics>(DEFAULT_SOURCE_METRICS);
   let ta: HTMLTextAreaElement | undefined;
@@ -306,6 +309,7 @@ export const SourcePane = (props: PaneProps) => {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
+        <StickyHeader />
         <Show when={markerLine() !== null}>
           <div class="source-edit-marker" style={markerStyle()} aria-hidden="true" />
         </Show>
@@ -344,6 +348,19 @@ export const SourcePane = (props: PaneProps) => {
           onScroll={(e) => {
             setScrollTop(e.currentTarget.scrollTop);
             syncSourceToPreview();
+            if (stickyOn()) {
+              const currentMetrics = metrics();
+              const lineOffsets = buildLineOffsets(source());
+              const offset = scrollTopToOffset(
+                e.currentTarget.scrollTop,
+                currentMetrics.lineHeight,
+                currentMetrics.paddingTop,
+                lineOffsets,
+              );
+              const blocks = doc().blocks;
+              const idx = blockIndexAtOffset(blocks, offset);
+              setActiveTopBlock(blocks[idx]?.id ?? null);
+            }
           }}
           onBlur={() => {
             clearEditingPoint("source");

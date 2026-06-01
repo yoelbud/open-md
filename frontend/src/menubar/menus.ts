@@ -51,6 +51,7 @@ import { THEME_PRESETS, setTheme, useThemeId } from "../store/theme";
 import { toggleDiffMode, useDiffMode } from "../store/diff";
 import { togglePagedMode, usePagedMode } from "../store/pagination";
 import { diffAgainstHead } from "../store/git";
+import { toggleSticky, useStickyEnabled } from "../store/stickyScroll";
 
 export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] => {
   const vis = usePaneVisible();
@@ -67,6 +68,7 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
   const currentTheme = useThemeId();
   const diffModeOn = useDiffMode();
   const pagedModeOn = usePagedMode();
+  const stickyOn = useStickyEnabled();
 
   const insertItems = BLOCK_TEMPLATES.map((t) => ({
     kind: "action" as const,
@@ -212,6 +214,12 @@ export const buildMenus = (opts?: { onOpenCustomCss?: () => void }): MenuDef[] =
           label: "Scroll sync",
           checked: () => scrollSyncOn(),
           action: toggleScrollSync,
+        },
+        {
+          kind: "check",
+          label: "Sticky Headings",
+          checked: () => stickyOn(),
+          action: toggleSticky,
         },
         {
           kind: "check",

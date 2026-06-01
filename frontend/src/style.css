@@ -2587,3 +2587,62 @@ html, body, #root {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ─────────────────────────────────────────────────
+   Sticky Headings breadcrumb bar
+───────────────────────────────────────────────── */
+.om-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.6rem;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-family: var(--sans);
+}
+
+/* Inside the source editor the header overlays the textarea */
+.source-editor > .om-sticky-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+}
+
+.om-sticky-crumb {
+  all: unset;
+  cursor: pointer;
+  color: var(--fg-dim);
+  font-size: 0.72rem;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 2px;
+  padding: 0.05rem 0.2rem;
+}
+.om-sticky-crumb:hover {
+  text-decoration: underline;
+  color: var(--fg);
+}
+.om-sticky-crumb[data-level="1"] {
+  font-weight: 600;
+}
+.om-sticky-crumb[data-level="2"] {
+  font-weight: 500;
+}
+
+.om-sticky-sep {
+  color: var(--fg-dim);
+  opacity: 0.5;
+  font-size: 0.68rem;
+  user-select: none;
+}

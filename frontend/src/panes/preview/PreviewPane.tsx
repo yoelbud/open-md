@@ -49,6 +49,8 @@ import {
 import { addComment, useCommentsForBlock } from "../../store/comments";
 import { usePagedMode, usePageConfig } from "../../store/pagination";
 import { isPageBreakBlock, pageFrameClasses } from "../../export/pagination";
+import { StickyHeader } from "../StickyHeader";
+import { setActiveTopBlock, useStickyEnabled } from "../../store/stickyScroll";
 import "katex/dist/katex.min.css";
 
 const FONT_OPTIONS: { id: PreviewFontFamily; label: string }[] = [
@@ -717,6 +719,7 @@ export const PreviewPane = (props: PaneProps) => {
   const doc = useDocument;
   const settings = usePreviewSettings();
   const [dragOver, setDragOver] = createSignal(false);
+  const stickyOn = useStickyEnabled();
   let previewBodyRef: HTMLDivElement | undefined;
 
   // Set up footnote hover-preview tooltip on the preview container.
@@ -782,6 +785,20 @@ export const PreviewPane = (props: PaneProps) => {
     }
   };
 
+  const handlePreviewScroll = (e: Event) => {
+    if (!stickyOn()) return;
+    const container = e.currentTarget as HTMLElement;
+    const containerRect = container.getBoundingClientRect();
+    const rows = container.querySelectorAll("[data-block-id]");
+    for (const row of rows) {
+      const rect = (row as HTMLElement).getBoundingClientRect();
+      if (rect.bottom > containerRect.top) {
+        setActiveTopBlock((row as HTMLElement).dataset.blockId ?? null);
+        return;
+      }
+    }
+  };
+
   // Handle click on [data-om-copy] buttons (code block copy)
   const handlePreviewClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -832,8 +849,10 @@ export const PreviewPane = (props: PaneProps) => {
         onDragLeave={() => setDragOver(false)}
         onPaste={onPaste}
         onClick={handlePreviewClick}
+        onScroll={handlePreviewScroll}
         tabIndex={0}
       >
+        <StickyHeader />
         <Show when={useDiffMode()() && !usePagedMode()()}>
           <DiffSummaryBanner />
         </Show>
