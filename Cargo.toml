@@ -26,7 +26,7 @@ xxhash-rust = { version = "=0.8.15", features = ["xxh3"] }
 thiserror = "=2.0.18"
 anyhow = "=1.0.102"
 tauri = "=2.11.2"
-tauri-build = "=2.6.2"
+tauri-build = "=2.6.3"
 rfd = "=0.17.2"
 wasm-bindgen = "=0.2.122"
 
